@@ -2,6 +2,8 @@ export type Company = {
   id: string;
   name: string;
   image_duration_seconds: number;
+  transition_type?: string;
+  transition_duration_seconds?: number;
   created_at: string;
 };
 

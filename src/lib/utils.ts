@@ -1,4 +1,5 @@
 import type { AudioAsset } from '../types';
+import imageCompression from 'browser-image-compression';
 
 export function shuffleArray<T>(items: T[]): T[] {
   const next = [...items];
@@ -25,69 +26,38 @@ export function formatBytes(bytes: number, decimals = 2): string {
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
 }
 
-export async function compressImage(file: File, quality = 0.8): Promise<File> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onload = (event) => {
-      const img = new Image();
-      img.src = event.target?.result as string;
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-          resolve(file);
-          return;
-        }
+export async function compressImageFile(file: File): Promise<{ file: File; originalSize: number; compressedSize: number }> {
+  const options = {
+    maxSizeMB: 2, // Tenta reduzir para no máximo 2MB, ou o tamanho necessário para ~70% de redução
+    maxWidthOrHeight: 3840, // 4K max
+    useWebWorker: true,
+    initialQuality: 0.85, // 85% de qualidade
+    alwaysKeepResolution: true, // Mantém a resolução sempre que possível, mas redimensiona se for maior que 4K
+    fileType: 'image/jpeg',
+  };
 
-        // Maximum dimensions for a TV (e.g., 4K)
-        const MAX_WIDTH = 3840;
-        const MAX_HEIGHT = 2160;
-        let width = img.width;
-        let height = img.height;
+  try {
+    const compressedBlob = await imageCompression(file, options);
+    const compressedFile = new File([compressedBlob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", {
+      type: 'image/jpeg',
+      lastModified: Date.now(),
+    });
 
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
-            width = MAX_WIDTH;
-          }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
-            height = MAX_HEIGHT;
-          }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        ctx.drawImage(img, 0, 0, width, height);
-
-        canvas.toBlob(
-          (blob) => {
-            if (!blob) {
-              resolve(file);
-              return;
-            }
-            // If the compressed file is larger, return the original
-            if (blob.size >= file.size) {
-              resolve(file);
-              return;
-            }
-            const compressedFile = new File([blob], file.name, {
-              type: 'image/jpeg',
-              lastModified: Date.now(),
-            });
-            resolve(compressedFile);
-          },
-          'image/jpeg',
-          quality
-        );
-      };
-      img.onerror = (error) => reject(error);
+    return {
+      file: compressedFile.size >= file.size ? file : compressedFile,
+      originalSize: file.size,
+      compressedSize: compressedFile.size >= file.size ? file.size : compressedFile.size,
     };
-    reader.onerror = (error) => reject(error);
-  });
+  } catch (error) {
+    console.error('Erro na compressão:', error);
+    return {
+      file,
+      originalSize: file.size,
+      compressedSize: file.size,
+    };
+  }
 }
+
 export function buildAlternatingAudioQueue(
   musicItems: AudioAsset[],
   voiceItems: AudioAsset[],
@@ -123,66 +93,86 @@ export function buildAlternatingAudioQueue(
   return queue;
 }
 
-/**
- * Comprime uma imagem no lado do cliente usando um canvas HTML.
- */
-export async function compressImage(file: File, quality = 0.8): Promise<{ file: File; originalSize: number; compressedSize: number }> {
+export function validateImage(file: File): Promise<void> {
   return new Promise((resolve, reject) => {
-    if (!file.type.startsWith('image/')) {
-      return reject(new Error('O arquivo não é uma imagem válida.'));
+    // 10MB limit
+    if (file.size > 10 * 1024 * 1024) {
+      reject(new Error(`O arquivo ${file.name} excede o limite de 10MB.`));
+      return;
+    }
+
+    const validTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!validTypes.includes(file.type)) {
+      reject(new Error(`O arquivo ${file.name} tem um formato inválido. Use JPG, PNG ou WebP.`));
+      return;
     }
 
     const img = new Image();
-    img.src = URL.createObjectURL(file);
-
+    const url = URL.createObjectURL(file);
     img.onload = () => {
-      URL.revokeObjectURL(img.src);
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
-
-      const ctx = canvas.getContext('2d');
-      if (!ctx) {
-        return reject(new Error('Canvas não suportado no navegador atual.'));
+      URL.revokeObjectURL(url);
+      if (img.width < 1280 || img.height < 720) {
+        reject(new Error(`A imagem ${file.name} possui resolução inferior a 1280x720.`));
+        return;
       }
-
-      ctx.drawImage(img, 0, 0);
-      
-      canvas.toBlob(
-        (blob) => {
-          if (!blob) {
-            return reject(new Error('Falha ao gerar blob da imagem.'));
-          }
-          
-          const safeName = file.name.replace(/\.[^/.]+$/, "") + ".jpg";
-          const compressedFile = new File([blob], safeName, {
-            type: 'image/jpeg',
-            lastModified: Date.now(),
-          });
-          
-          resolve({
-            file: compressedFile,
-            originalSize: file.size,
-            compressedSize: compressedFile.size,
-          });
-        },
-        'image/jpeg',
-        quality
-      );
+      resolve();
     };
-
-    img.onerror = () => reject(new Error('Não foi possível ler o arquivo de imagem.'));
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error(`O arquivo ${file.name} está corrompido ou é inválido.`));
+    };
+    img.src = url;
   });
 }
 
-/**
- * Formata um valor de bytes para uma string legível (KB, MB, etc).
- */
-export function formatBytes(bytes: number, decimals = 2) {
-  if (!+bytes) return '0 Bytes';
-  const k = 1024;
-  const dm = decimals < 0 ? 0 : decimals;
-  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+export function validateAudio(file: File): Promise<void> {
+  return new Promise((resolve, reject) => {
+    // 50MB limit
+    if (file.size > 50 * 1024 * 1024) {
+      reject(new Error(`O arquivo de áudio ${file.name} excede o limite de 50MB.`));
+      return;
+    }
+
+    // Detecção automática de formato baseada no MIME Type.
+    // O browser gerencia a decodificação via Web Audio API/HTML5 Audio (MPEG, MP3, WAV).
+    const validTypes = ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/mp4', 'audio/x-m4a', 'video/mp4'];
+    
+    // Fallback: se o SO/Browser não enviar mime-type, vamos confiar na extensão do arquivo e deixar
+    // a tag <audio> falhar caso esteja corrompido
+    const fileExt = file.name.split('.').pop()?.toLowerCase();
+    const validExts = ['mp3', 'wav', 'mpeg', 'm4a', 'mp4'];
+    
+    if (file.type && !validTypes.includes(file.type)) {
+      // Se tiver type mas nao for suportado, checamos a extensão como fallback
+      if (!fileExt || !validExts.includes(fileExt)) {
+        reject(new Error(`O formato do arquivo ${file.name} (${file.type}) não é suportado. Use MP3, WAV ou MPEG.`));
+        return;
+      }
+    } else if (!file.type) {
+      if (!fileExt || !validExts.includes(fileExt)) {
+        reject(new Error(`O formato do arquivo ${file.name} não pôde ser identificado. Use MP3, WAV ou MPEG.`));
+        return;
+      }
+    }
+
+    const audio = new Audio();
+    const url = URL.createObjectURL(file);
+    
+    audio.onloadedmetadata = () => {
+      URL.revokeObjectURL(url);
+      // Validar se o áudio tem pelo menos 1 segundo
+      if (audio.duration < 1) {
+        reject(new Error(`O arquivo de áudio ${file.name} é muito curto (mínimo de 1 segundo).`));
+        return;
+      }
+      resolve();
+    };
+    
+    audio.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error(`O arquivo de áudio ${file.name} está corrompido, vazio ou o codec não é suportado nativamente pelo navegador.`));
+    };
+    
+    audio.src = url;
+  });
 }

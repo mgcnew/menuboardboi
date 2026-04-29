@@ -3,7 +3,9 @@ create extension if not exists "pgcrypto";
 create table if not exists public.companies (
   id uuid primary key default gen_random_uuid(),
   name text not null unique,
-  image_duration_seconds integer not null default 10 check (image_duration_seconds >= 3),
+  image_duration_seconds integer not null default 10 check (image_duration_seconds >= 1),
+  transition_type text not null default 'fade' check (transition_type in ('fade', 'cut', 'wipe-horizontal', 'wipe-vertical')),
+  transition_duration_seconds numeric not null default 1.0 check (transition_duration_seconds >= 0.1 and transition_duration_seconds <= 3.0),
   created_at timestamptz not null default timezone('utc'::text, now())
 );
 

@@ -10,10 +10,11 @@ import {
   listImages,
   reorderImages,
   updateCompanyDuration,
+  updateCompanyTransition,
   uploadAudio,
   uploadImages,
 } from './lib/supabase';
-import { compressImage, formatBytes, buildAlternatingAudioQueue, getFileName } from './lib/utils';
+import { compressImageFile, formatBytes, buildAlternatingAudioQueue, getFileName, validateImage, validateAudio } from './lib/utils';
 import type { AudioAsset, Company, ImageAsset, MediaKind } from './types';
 
 const COMPANY_STORAGE_KEY = 'tv-ads-player-company-id';
@@ -99,6 +100,8 @@ function ConfigMode() {
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [durationInput, setDurationInput] = useState('10');
+  const [transitionTypeInput, setTransitionTypeInput] = useState('fade');
+  const [transitionDurationInput, setTransitionDurationInput] = useState('1.0');
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; message: string; stats?: { original: number; compressed: number } } | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   
@@ -159,6 +162,8 @@ function ConfigMode() {
   useEffect(() => {
     if (selectedCompany) {
       setDurationInput(String(selectedCompany.image_duration_seconds));
+      setTransitionTypeInput(selectedCompany.transition_type ?? 'fade');
+      setTransitionDurationInput(String(selectedCompany.transition_duration_seconds ?? 1.0));
     }
   }, [selectedCompany]);
 
@@ -219,16 +224,27 @@ function ConfigMode() {
         if (kind === 'images') {
           const processedFiles: File[] = [];
           for (let i = 0; i < fileArray.length; i++) {
+            const file = fileArray[i];
             setUploadProgress({
               current: i,
               total: fileArray.length,
-              message: `Comprimindo imagem ${i + 1} de ${fileArray.length}...`
+              message: `Validando e comprimindo imagem ${i + 1} de ${fileArray.length}...`,
+              stats: { original: originalSize, compressed: compressedSize }
             });
-            const file = fileArray[i];
-            originalSize += file.size;
-            const compressed = await compressImage(file, 0.8);
-            compressedSize += compressed.size;
-            processedFiles.push(compressed);
+            
+            await validateImage(file);
+            
+            const result = await compressImageFile(file);
+            originalSize += result.originalSize;
+            compressedSize += result.compressedSize;
+            processedFiles.push(result.file);
+            
+            setUploadProgress({
+              current: i + 1,
+              total: fileArray.length,
+              message: `Comprimindo imagem ${i + 1} de ${fileArray.length}...`,
+              stats: { original: originalSize, compressed: compressedSize }
+            });
           }
           fileArray = processedFiles;
           
@@ -242,9 +258,15 @@ function ConfigMode() {
           await uploadImages(selectedCompanyId, fileArray);
           
           const savings = originalSize - compressedSize;
-          const percent = ((savings / originalSize) * 100).toFixed(0);
+          const percent = originalSize > 0 ? ((savings / originalSize) * 100).toFixed(0) : '0';
           setFeedback(`Upload concluído! Redução de ${formatBytes(savings)} (${percent}%).`);
         } else {
+          setUploadProgress({ current: 0, total: fileArray.length, message: 'Validando áudio...' });
+          for (let i = 0; i < fileArray.length; i++) {
+            setUploadProgress({ current: i, total: fileArray.length, message: `Validando áudio ${i + 1} de ${fileArray.length}...` });
+            await validateAudio(fileArray[i]);
+          }
+          
           setUploadProgress({ current: 0, total: fileArray.length, message: 'Fazendo upload de áudio...' });
           await uploadAudio(selectedCompanyId, kind, fileArray);
           setFeedback('Upload de áudio concluído com sucesso.');
@@ -308,15 +330,17 @@ function ConfigMode() {
     [images, refreshAssets, selectedCompanyId],
   );
 
-  const isDurationValid = Number.isFinite(Number(durationInput)) && Number(durationInput) >= 3;
+  const isDurationValid = Number.isFinite(Number(durationInput)) && Number(durationInput) >= 1 && Number(durationInput) <= 30;
+  const isTransitionValid = Number.isFinite(Number(transitionDurationInput)) && Number(transitionDurationInput) >= 0.1 && Number(transitionDurationInput) <= 3;
+  const isTotalTimeValid = (Number(durationInput) + Number(transitionDurationInput)) >= 1.5;
 
   const handleSaveDuration = useCallback(async () => {
     if (!selectedCompanyId) {
       return;
     }
 
-    if (!isDurationValid) {
-      setFeedback('Use um intervalo de pelo menos 3 segundos.');
+    if (!isDurationValid || !isTransitionValid || !isTotalTimeValid) {
+      setFeedback('Valores inválidos. Tempo total deve ser ≥ 1.5s.');
       return;
     }
 
@@ -324,7 +348,8 @@ function ConfigMode() {
     setFeedback('');
 
     try {
-      await updateCompanyDuration(selectedCompanyId, Math.floor(Number(durationInput)));
+      await updateCompanyDuration(selectedCompanyId, Number(durationInput));
+      await updateCompanyTransition(selectedCompanyId, transitionTypeInput, Number(transitionDurationInput));
       await refreshCompanies();
       setFeedback('Configurações salvas com sucesso.');
     } catch (error) {
@@ -332,7 +357,13 @@ function ConfigMode() {
     } finally {
       setBusy(false);
     }
-  }, [durationInput, isDurationValid, refreshCompanies, selectedCompanyId]);
+  }, [durationInput, transitionTypeInput, transitionDurationInput, isDurationValid, isTransitionValid, isTotalTimeValid, refreshCompanies, selectedCompanyId]);
+
+  const handlePreset = useCallback((duration: string, type: string, transDuration: string) => {
+    setDurationInput(duration);
+    setTransitionTypeInput(type);
+    setTransitionDurationInput(transDuration);
+  }, []);
 
   const previewImageIndex = previewImage ? images.findIndex((img) => img.file_url === previewImage) : -1;
 
@@ -552,6 +583,134 @@ function ConfigMode() {
           className="tab-panel"
           hidden={activeTab !== 'images'}
         >
+          {selectedCompany ? (
+            <article className="panel" style={{ marginBottom: 'var(--space-4)' }}>
+              <header className="section-header">
+                <div>
+                  <h3>Configurações de Transição</h3>
+                  <p>Ajuste o tempo de exibição e os efeitos visuais entre as fotos.</p>
+                </div>
+              </header>
+
+              <div className="form-grid">
+                <label>
+                  Duração da Foto (segundos)
+                  <input
+                    type="number"
+                    min="1"
+                    max="30"
+                    step="0.5"
+                    value={durationInput}
+                    onChange={(e) => setDurationInput(e.target.value)}
+                    disabled={busy}
+                  />
+                </label>
+
+                <label>
+                  Tipo de Transição
+                  <select
+                    value={transitionTypeInput}
+                    onChange={(e) => setTransitionTypeInput(e.target.value)}
+                    disabled={busy}
+                  >
+                    <option value="fade">Fade (Dissolvência)</option>
+                    <option value="cut">Cut (Corte Direto)</option>
+                    <option value="wipe-horizontal">Wipe Horizontal</option>
+                    <option value="wipe-vertical">Wipe Vertical</option>
+                  </select>
+                </label>
+
+                <label>
+                  Tempo da Transição (segundos)
+                  <input
+                    type="number"
+                    min="0.1"
+                    max="3"
+                    step="0.1"
+                    value={transitionDurationInput}
+                    onChange={(e) => setTransitionDurationInput(e.target.value)}
+                    disabled={busy || transitionTypeInput === 'cut'}
+                  />
+                </label>
+              </div>
+
+              <div className="presets-container" style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-4)', flexWrap: 'wrap' }}>
+                <button type="button" className="secondary" onClick={() => handlePreset('3', 'fade', '0.5')}>
+                  TV Commercial
+                </button>
+                <button type="button" className="secondary" onClick={() => handlePreset('5', 'wipe-horizontal', '1.0')}>
+                  Digital Signage
+                </button>
+                <button type="button" className="secondary" onClick={() => handlePreset('2', 'cut', '0.1')}>
+                  Apresentação Rápida
+                </button>
+                
+                <button 
+                  type="button" 
+                  onClick={() => void handleSaveDuration()} 
+                  disabled={busy || !isDurationValid || !isTransitionValid || !isTotalTimeValid}
+                  style={{ marginLeft: 'auto' }}
+                >
+                  Salvar Configurações
+                </button>
+              </div>
+
+              {!isTotalTimeValid && (
+                <div style={{ color: 'var(--text-danger)', fontSize: '0.85rem', marginTop: 'var(--space-2)' }}>
+                  O tempo total (foto + transição) deve ser de pelo menos 1.5 segundos.
+                </div>
+              )}
+              
+              {/* Live Preview Box */}
+              <div className="live-preview-box" style={{ marginTop: 'var(--space-4)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+                <div style={{ padding: 'var(--space-2) var(--space-3)', background: 'var(--bg-subtle)', borderBottom: '1px solid var(--border-default)', fontSize: '0.85rem', fontWeight: 500 }}>
+                  Preview ao Vivo
+                </div>
+                <div style={{ position: 'relative', height: '160px', background: '#000', overflow: 'hidden' }}>
+                  <div 
+                    className="preview-slide"
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: 'white',
+                      fontSize: '1.5rem',
+                      fontWeight: 'bold',
+                      animation: `preview-${transitionTypeInput} ${Number(durationInput) + Number(transitionDurationInput)}s infinite`,
+                      animationDuration: `${Number(durationInput) + Number(transitionDurationInput)}s`,
+                      '--trans-duration': `${transitionTypeInput === 'cut' ? 0 : transitionDurationInput}s`,
+                      '--photo-duration': `${durationInput}s`
+                    } as React.CSSProperties}
+                  >
+                    Foto 1
+                  </div>
+                  <div 
+                    className="preview-slide"
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: 'white',
+                      fontSize: '1.5rem',
+                      fontWeight: 'bold',
+                      background: '#1f2937',
+                      animation: `preview-${transitionTypeInput}-alt ${Number(durationInput) + Number(transitionDurationInput)}s infinite`,
+                      animationDuration: `${Number(durationInput) + Number(transitionDurationInput)}s`,
+                      '--trans-duration': `${transitionTypeInput === 'cut' ? 0 : transitionDurationInput}s`,
+                      '--photo-duration': `${durationInput}s`
+                    } as React.CSSProperties}
+                  >
+                    Foto 2
+                  </div>
+                </div>
+              </div>
+            </article>
+          ) : null}
+
           <MediaSection
             title="Fotos Promocionais"
             description="Arquivos de imagem exibidos em sequência. Ordene conforme desejado."
@@ -629,7 +788,7 @@ function ConfigMode() {
           <MediaSection
             title="Trilha Sonora"
             description="Músicas que compõem o ciclo principal de áudio."
-            accept="audio/*"
+            accept="audio/*,.mp3,.wav,.mpeg,.m4a"
             onUpload={(files) => void handleUpload(files, 'music')}
             disabled={!selectedCompanyId || busy}
             isUploading={busy}
@@ -654,7 +813,7 @@ function ConfigMode() {
           <MediaSection
             title="Locuções e Avisos"
             description="Áudios secundários intercalados com a trilha sonora."
-            accept="audio/*"
+            accept="audio/*,.mp3,.wav,.mpeg,.m4a"
             onUpload={(files) => void handleUpload(files, 'voiceovers')}
             disabled={!selectedCompanyId || busy}
             isUploading={busy}
@@ -796,6 +955,11 @@ function MediaSection({
               <span>Original: {formatBytes(uploadProgress.stats.original)}</span>
               <span>→</span>
               <span>Comprimido: {formatBytes(uploadProgress.stats.compressed)}</span>
+              {uploadProgress.stats.original > 0 && (
+                <span className="progress-reduction">
+                  (-{((1 - uploadProgress.stats.compressed / uploadProgress.stats.original) * 100).toFixed(0)}%)
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -822,26 +986,38 @@ type AssetListProps = {
 function AssetList({ items, emptyText, busy, onDelete }: AssetListProps) {
   return (
     <ul className="asset-list" aria-label="Lista de Áudios">
-      {items.map((asset) => (
-        <li key={asset.id} className="asset-row">
-          <div className="audio-badge" aria-hidden="true">WAV/MP3</div>
-          <div className="asset-copy">
-            <strong>{getFileName(asset.file_url)}</strong>
-            <span>Cadastrado em {new Date(asset.created_at).toLocaleDateString('pt-BR')}</span>
-          </div>
-          <div className="asset-actions">
-            <button
-              type="button"
-              className="danger"
-              onClick={() => onDelete(asset)}
-              disabled={busy}
-              aria-label="Excluir áudio"
-            >
-              Excluir
-            </button>
-          </div>
-        </li>
-      ))}
+      {items.map((asset) => {
+        const ext = asset.file_url.split('.').pop()?.toUpperCase() || 'AUDIO';
+        return (
+          <li key={asset.id} className="asset-row" style={{ flexWrap: 'wrap' }}>
+            <div className="audio-badge" aria-hidden="true" style={{ fontSize: '0.6rem' }}>{ext.substring(0, 4)}</div>
+            <div className="asset-copy">
+              <strong>{getFileName(asset.file_url)}</strong>
+              <span>Cadastrado em {new Date(asset.created_at).toLocaleDateString('pt-BR')}</span>
+            </div>
+            <div className="asset-actions">
+              <button
+                type="button"
+                className="danger"
+                onClick={() => onDelete(asset)}
+                disabled={busy}
+                aria-label="Excluir áudio"
+              >
+                Excluir
+              </button>
+            </div>
+            <div style={{ width: '100%', marginTop: 'var(--space-2)' }}>
+              <audio 
+                controls 
+                src={asset.file_url} 
+                preload="none" 
+                style={{ width: '100%', height: '36px', outline: 'none' }}
+                title={`Preview de ${getFileName(asset.file_url)}`}
+              />
+            </div>
+          </li>
+        );
+      })}
       {items.length === 0 ? <EmptyState text={emptyText} /> : null}
     </ul>
   );
@@ -864,8 +1040,16 @@ function TvMode() {
   const [voiceovers, setVoiceovers] = useState<AudioAsset[]>([]);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [message, setMessage] = useState('Inicializando player de mídia...');
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  
+  // Audio Crossfade Logic
+  const audioPlayers = useRef<[HTMLAudioElement, HTMLAudioElement]>([
+    new Audio(),
+    new Audio()
+  ]);
+  const activePlayerIndex = useRef(0);
   const queueRef = useRef<AudioAsset[]>([]);
+  const CROSSFADE_TIME = 2.5; // Segundos para o crossfade
+  
   const companyId = readCompanyIdFromUrl();
 
   const loadPlayerData = useCallback(async () => {
@@ -895,34 +1079,79 @@ function TvMode() {
     setMessage('');
   }, [companyId]);
 
+  const fadeAudio = (audio: HTMLAudioElement, direction: 'in' | 'out', duration: number) => {
+    const startVol = direction === 'in' ? 0 : 1;
+    const endVol = direction === 'in' ? 1 : 0;
+    const steps = 20;
+    const interval = (duration * 1000) / steps;
+    const volStep = (endVol - startVol) / steps;
+
+    audio.volume = startVol;
+    
+    let currentStep = 0;
+    const timer = setInterval(() => {
+      currentStep++;
+      const nextVol = startVol + volStep * currentStep;
+      audio.volume = Math.max(0, Math.min(1, nextVol));
+      
+      if (currentStep >= steps) {
+        clearInterval(timer);
+        if (direction === 'out') {
+          audio.pause();
+          audio.src = '';
+        }
+      }
+    }, interval);
+  };
+
   const playNextAudio = useCallback(async () => {
-    const audio = audioRef.current;
-
-    if (!audio) {
-      return;
-    }
-
-    if (music.length === 0 && voiceovers.length === 0) {
-      return;
-    }
+    if (music.length === 0 && voiceovers.length === 0) return;
 
     if (queueRef.current.length === 0) {
       queueRef.current = buildAlternatingAudioQueue(music, voiceovers);
     }
 
-    const nextAudio = queueRef.current.shift();
+    const nextAsset = queueRef.current.shift();
+    if (!nextAsset) return;
 
-    if (!nextAudio) {
-      return;
+    // Alterna entre os dois players
+    const currentPlayer = audioPlayers.current[activePlayerIndex.current];
+    activePlayerIndex.current = (activePlayerIndex.current + 1) % 2;
+    const nextPlayer = audioPlayers.current[activePlayerIndex.current];
+
+    // Inicia o fade out do player atual se ele estiver tocando
+    if (!currentPlayer.paused) {
+      fadeAudio(currentPlayer, 'out', CROSSFADE_TIME);
     }
 
-    audio.src = nextAudio.file_url;
-    audio.load();
+    nextPlayer.src = nextAsset.file_url;
+    nextPlayer.load();
+    nextPlayer.volume = 0;
+
+    nextPlayer.onerror = () => {
+      console.error(`Falha ao decodificar/reproduzir formato: ${nextAsset.file_url}`);
+      // Pula imediatamente para a próxima faixa
+      void playNextAudio();
+    };
 
     try {
-      await audio.play();
-    } catch {
-      setMessage('A reprodução automática de áudio foi bloqueada pelo navegador.');
+      await nextPlayer.play();
+      fadeAudio(nextPlayer, 'in', CROSSFADE_TIME);
+      
+      // Monitora o fim da faixa para iniciar o próximo crossfade
+      const checkEnd = () => {
+        const remaining = nextPlayer.duration - nextPlayer.currentTime;
+        if (remaining <= CROSSFADE_TIME) {
+          nextPlayer.removeEventListener('timeupdate', checkEnd);
+          void playNextAudio();
+        }
+      };
+
+      nextPlayer.addEventListener('timeupdate', checkEnd);
+    } catch (err) {
+      console.error('Erro ao tocar áudio:', err);
+      // Tenta o próximo em caso de erro
+      void playNextAudio();
     }
   }, [music, voiceovers]);
 
@@ -950,47 +1179,54 @@ function TvMode() {
 
     const timer = window.setInterval(() => {
       setCurrentImageIndex((index) => (index + 1) % images.length);
-    }, (company?.image_duration_seconds ?? 10) * 1000);
+    }, (company?.image_duration_seconds ?? 10) * 1000 + (company?.transition_duration_seconds ?? 1) * 1000);
 
     return () => window.clearInterval(timer);
-  }, [company?.image_duration_seconds, images]);
+  }, [company?.image_duration_seconds, company?.transition_duration_seconds, images]);
 
   useEffect(() => {
     queueRef.current = [];
-
-    if (music.length === 0 && voiceovers.length === 0) {
-      return;
+    if (music.length > 0 || voiceovers.length > 0) {
+      void playNextAudio();
     }
 
-    void playNextAudio();
-  }, [music, playNextAudio, voiceovers]);
+    return () => {
+      audioPlayers.current.forEach(p => {
+        p.pause();
+        p.src = '';
+      });
+    };
+  }, [music, voiceovers, playNextAudio]);
 
   const currentImage = images[currentImageIndex];
+  const transitionType = company?.transition_type ?? 'fade';
+  const transitionDuration = company?.transition_duration_seconds ?? 1.0;
+  const photoDuration = company?.image_duration_seconds ?? 10;
 
   return (
     <main className="tv-shell" aria-label="Player de Exibição TV">
       {currentImage ? (
-        <img
+        <div 
           key={currentImage.id}
-          className="tv-image"
-          src={currentImage.file_url}
-          alt="Propaganda atual"
-          draggable={false}
-        />
+          className={`tv-image-container transition-${transitionType}`}
+          style={{
+            animationDuration: `${photoDuration + transitionDuration}s`,
+            '--trans-duration': `${transitionType === 'cut' ? 0 : transitionDuration}s`,
+            '--photo-duration': `${photoDuration}s`
+          } as React.CSSProperties}
+        >
+          <img
+            className="tv-image"
+            src={currentImage.file_url}
+            alt="Propaganda atual"
+            draggable={false}
+          />
+        </div>
       ) : (
         <div className="tv-placeholder" role="status" aria-live="polite">
           {message || 'Nenhuma imagem cadastrada no momento.'}
         </div>
       )}
-
-      <audio
-        ref={audioRef}
-        autoPlay
-        preload="auto"
-        onEnded={() => void playNextAudio()}
-        onError={() => void playNextAudio()}
-        aria-hidden="true"
-      />
     </main>
   );
 }

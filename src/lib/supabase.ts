@@ -65,6 +65,21 @@ export async function updateCompanyDuration(companyId: string, seconds: number) 
   }
 }
 
+export async function updateCompanyTransition(companyId: string, type: string, duration: number) {
+  const client = assertSupabase();
+  const { error } = await client
+    .from('companies')
+    .update({ 
+      transition_type: type,
+      transition_duration_seconds: duration
+    })
+    .eq('id', companyId);
+
+  if (error) {
+    throw error;
+  }
+}
+
 export async function listImages(companyId: string) {
   const client = assertSupabase();
   const { data, error } = await client
