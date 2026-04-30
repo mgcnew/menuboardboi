@@ -28,7 +28,7 @@ export async function listCompanies() {
   const client = assertSupabase();
   const { data, error } = await client
     .from('companies')
-    .select('id, name, access_code, image_duration_seconds, transition_type, transition_duration_seconds, created_at')
+    .select('id, name, access_code, image_duration_seconds, transition_type, transition_duration_seconds, image_fit_mode, created_at')
     .order('name');
 
   if (error) {
@@ -58,7 +58,7 @@ export async function createCompany(name: string) {
   const { data, error } = await client
     .from('companies')
     .insert({ name: name.trim(), access_code })
-    .select('id, name, access_code, image_duration_seconds, transition_type, transition_duration_seconds, created_at')
+    .select('id, name, access_code, image_duration_seconds, transition_type, transition_duration_seconds, image_fit_mode, created_at')
     .single();
 
   if (error) {
@@ -72,7 +72,7 @@ export async function getCompanyByCode(code: string) {
   const client = assertSupabase();
   const { data, error } = await client
     .from('companies')
-    .select('id, name, access_code, image_duration_seconds, transition_type, transition_duration_seconds, created_at')
+    .select('id, name, access_code, image_duration_seconds, transition_type, transition_duration_seconds, image_fit_mode, created_at')
     .eq('access_code', code)
     .single();
 
@@ -95,13 +95,14 @@ export async function updateCompanyDuration(companyId: string, seconds: number) 
   }
 }
 
-export async function updateCompanyTransition(companyId: string, type: string, duration: number) {
+export async function updateCompanyTransition(companyId: string, type: string, duration: number, fitMode: string) {
   const client = assertSupabase();
   const { error } = await client
     .from('companies')
     .update({ 
       transition_type: type,
-      transition_duration_seconds: duration
+      transition_duration_seconds: duration,
+      image_fit_mode: fitMode
     })
     .eq('id', companyId);
 

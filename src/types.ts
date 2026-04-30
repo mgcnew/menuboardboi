@@ -5,6 +5,7 @@ export type Company = {
   image_duration_seconds: number;
   transition_type?: string;
   transition_duration_seconds?: number;
+  image_fit_mode?: 'contain' | 'cover' | 'fill';
   created_at: string;
 };
 

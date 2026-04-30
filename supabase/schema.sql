@@ -3,9 +3,11 @@ create extension if not exists "pgcrypto";
 create table if not exists public.companies (
   id uuid primary key default gen_random_uuid(),
   name text not null unique,
+  access_code text unique,
   image_duration_seconds integer not null default 10 check (image_duration_seconds >= 1),
   transition_type text not null default 'fade' check (transition_type in ('fade', 'cut', 'wipe-horizontal', 'wipe-vertical')),
   transition_duration_seconds numeric not null default 1.0 check (transition_duration_seconds >= 0.1 and transition_duration_seconds <= 3.0),
+  image_fit_mode text not null default 'contain' check (image_fit_mode in ('contain', 'cover', 'fill')),
   created_at timestamptz not null default timezone('utc'::text, now())
 );
 
@@ -15,6 +17,7 @@ create table if not exists public.images (
   file_url text not null,
   file_path text not null unique,
   order_index integer not null default 0,
+  active_days smallint[] default array[0,1,2,3,4,5,6],
   created_at timestamptz not null default timezone('utc'::text, now())
 );
 
@@ -115,6 +118,88 @@ with check (
     select 1
     from public.companies
     where companies.id = voiceovers.company_id
+  )
+);
+
+-- Tabelas adicionais para Multi-Tenancy e RBAC (retrocompatíveis)
+create type public.user_role as enum ('client', 'master_admin');
+
+create table if not exists public.profiles (
+  id uuid primary key references auth.users(id) on delete cascade,
+  company_id uuid references public.companies(id) on delete set null,
+  role public.user_role not null default 'client',
+  full_name text,
+  avatar_url text,
+  created_at timestamptz not null default timezone('utc'::text, now()),
+  updated_at timestamptz not null default timezone('utc'::text, now())
+);
+
+create index if not exists profiles_company_idx on public.profiles (company_id);
+create index if not exists profiles_role_idx on public.profiles (role);
+
+alter table public.profiles enable row level security;
+
+drop policy if exists "profiles are viewable by owner and master admin" on public.profiles;
+create policy "profiles are viewable by owner and master admin"
+on public.profiles
+for select
+to authenticated
+using (
+  auth.uid() = id
+  or exists (
+    select 1 from public.profiles
+    where id = auth.uid()
+    and role = 'master_admin'
+  )
+);
+
+drop policy if exists "profiles are updatable by owner" on public.profiles;
+create policy "profiles are updatable by owner"
+on public.profiles
+for update
+to authenticated
+using (auth.uid() = id)
+with check (auth.uid() = id);
+
+-- Trigger para criar profile automaticamente quando um usuário é criado
+create or replace function public.handle_new_user()
+returns trigger as $$
+begin
+  insert into public.profiles (id, full_name, avatar_url)
+  values (new.id, new.raw_user_meta_data->>'full_name', new.raw_user_meta_data->>'avatar_url');
+  return new;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+-- Tabela para limites de uso e billing (opcional, para uso futuro)
+create table if not exists public.company_usage (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references public.companies(id) on delete cascade,
+  monthly_images_uploaded integer default 0,
+  monthly_storage_bytes bigint default 0,
+  billing_cycle_month integer not null,
+  billing_cycle_year integer not null,
+  created_at timestamptz not null default timezone('utc'::text, now()),
+  unique (company_id, billing_cycle_month, billing_cycle_year)
+);
+
+alter table public.company_usage enable row level security;
+
+drop policy if exists "company usage visible by company members and master" on public.company_usage;
+create policy "company usage visible by company members and master"
+on public.company_usage
+for select
+to authenticated
+using (
+  exists (
+    select 1 from public.profiles
+    where profiles.id = auth.uid()
+    and (profiles.company_id = company_usage.company_id or profiles.role = 'master_admin')
   )
 );
 

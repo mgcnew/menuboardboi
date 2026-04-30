@@ -135,8 +135,10 @@ function ConfigMode() {
   const [durationInput, setDurationInput] = useState('10');
   const [transitionTypeInput, setTransitionTypeInput] = useState('fade');
   const [transitionDurationInput, setTransitionDurationInput] = useState('1.0');
+  const [imageFitModeInput, setImageFitModeInput] = useState('contain');
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; message: string; stats?: { original: number; compressed: number } } | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [previewResolution, setPreviewResolution] = useState<'landscape' | 'portrait' | 'square'>('landscape');
   
   // Audio Settings
   const { settings: audioSettings, updateSettings: setAudioSettings } = useAudioSettings(selectedCompanyId);
@@ -214,6 +216,7 @@ function ConfigMode() {
       setDurationInput(String(selectedCompany.image_duration_seconds));
       setTransitionTypeInput(selectedCompany.transition_type ?? 'fade');
       setTransitionDurationInput(String(selectedCompany.transition_duration_seconds ?? 1.0));
+      setImageFitModeInput(selectedCompany.image_fit_mode ?? 'contain');
     }
   }, [selectedCompany]);
 
@@ -413,7 +416,7 @@ function ConfigMode() {
 
     try {
       await updateCompanyDuration(selectedCompanyId, Number(durationInput));
-      await updateCompanyTransition(selectedCompanyId, transitionTypeInput, Number(transitionDurationInput));
+      await updateCompanyTransition(selectedCompanyId, transitionTypeInput, Number(transitionDurationInput), imageFitModeInput);
       await refreshCompanies();
       setFeedback('Configurações salvas com sucesso.');
     } catch (error) {
@@ -421,12 +424,13 @@ function ConfigMode() {
     } finally {
       setBusy(false);
     }
-  }, [durationInput, transitionTypeInput, transitionDurationInput, isDurationValid, isTransitionValid, isTotalTimeValid, refreshCompanies, selectedCompanyId]);
+  }, [durationInput, transitionTypeInput, transitionDurationInput, imageFitModeInput, isDurationValid, isTransitionValid, isTotalTimeValid, refreshCompanies, selectedCompanyId]);
 
-  const handlePreset = useCallback((duration: string, type: string, transDuration: string) => {
+  const handlePreset = useCallback((duration: string, type: string, transDuration: string, fitMode: string = 'contain') => {
     setDurationInput(duration);
     setTransitionTypeInput(type);
     setTransitionDurationInput(transDuration);
+    setImageFitModeInput(fitMode);
   }, []);
 
   const previewImageIndex = previewImage ? images.findIndex((img) => img.file_url === previewImage) : -1;
@@ -804,17 +808,29 @@ function ConfigMode() {
                     disabled={busy || transitionTypeInput === 'cut'}
                   />
                 </label>
+                <label>
+                  Modo de Exibição
+                  <select
+                    value={imageFitModeInput}
+                    onChange={(e) => setImageFitModeInput(e.target.value)}
+                    disabled={busy}
+                  >
+                    <option value="contain">Ajustar à Tela (Mantém proporção)</option>
+                    <option value="cover">Preencher Tela (Corta as bordas)</option>
+                    <option value="fill">Esticar (Distorce a imagem)</option>
+                  </select>
+                </label>
               </div>
 
               <div className="presets-container" style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-4)', flexWrap: 'wrap' }}>
-                <button type="button" className="secondary" onClick={() => handlePreset('3', 'fade', '0.5')}>
-                  TV Commercial
+                <button type="button" className="secondary" onClick={() => handlePreset('10', 'fade', '1.0', 'contain')}>
+                  Monitor Horizontal (16:9)
                 </button>
-                <button type="button" className="secondary" onClick={() => handlePreset('5', 'wipe-horizontal', '1.0')}>
-                  Digital Signage
+                <button type="button" className="secondary" onClick={() => handlePreset('10', 'fade', '1.0', 'cover')}>
+                  Monitor Vertical (Em pé)
                 </button>
-                <button type="button" className="secondary" onClick={() => handlePreset('2', 'cut', '0.1')}>
-                  Apresentação Rápida
+                <button type="button" className="secondary" onClick={() => handlePreset('10', 'fade', '1.0', 'contain')}>
+                  Monitor Quadrado (1:1)
                 </button>
                 
                 <button 
@@ -835,49 +851,63 @@ function ConfigMode() {
               
               {/* Live Preview Box */}
               <div className="live-preview-box" style={{ marginTop: 'var(--space-4)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-                <div style={{ padding: 'var(--space-2) var(--space-3)', background: 'var(--bg-subtle)', borderBottom: '1px solid var(--border-default)', fontSize: '0.85rem', fontWeight: 500 }}>
-                  Preview ao Vivo
+                <div style={{ padding: 'var(--space-2) var(--space-3)', background: 'var(--bg-subtle)', borderBottom: '1px solid var(--border-default)', fontSize: '0.85rem', fontWeight: 500, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Preview ao Vivo</span>
+                  <select 
+                    value={previewResolution} 
+                    onChange={(e) => setPreviewResolution(e.target.value as any)}
+                    style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem', width: 'auto' }}
+                  >
+                    <option value="landscape">Paisagem (Ex: 1920x1080)</option>
+                    <option value="portrait">Retrato (Ex: 1080x1920)</option>
+                    <option value="square">Quadrado (Ex: 1080x1080)</option>
+                  </select>
                 </div>
-                <div style={{ position: 'relative', height: '160px', background: '#000', overflow: 'hidden' }}>
-                  <div 
-                    className="preview-slide"
-                    style={{
-                      position: 'absolute',
-                      inset: 0,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: 'white',
-                      fontSize: '1.5rem',
-                      fontWeight: 'bold',
-                      animation: `preview-${transitionTypeInput} ${Number(durationInput) + Number(transitionDurationInput)}s infinite`,
-                      animationDuration: `${Number(durationInput) + Number(transitionDurationInput)}s`,
-                      '--trans-duration': `${transitionTypeInput === 'cut' ? 0 : transitionDurationInput}s`,
-                      '--photo-duration': `${durationInput}s`
-                    } as React.CSSProperties}
-                  >
-                    Foto 1
-                  </div>
-                  <div 
-                    className="preview-slide"
-                    style={{
-                      position: 'absolute',
-                      inset: 0,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: 'white',
-                      fontSize: '1.5rem',
-                      fontWeight: 'bold',
-                      background: '#1f2937',
-                      animation: `preview-${transitionTypeInput}-alt ${Number(durationInput) + Number(transitionDurationInput)}s infinite`,
-                      animationDuration: `${Number(durationInput) + Number(transitionDurationInput)}s`,
-                      '--trans-duration': `${transitionTypeInput === 'cut' ? 0 : transitionDurationInput}s`,
-                      '--photo-duration': `${durationInput}s`
-                    } as React.CSSProperties}
-                  >
-                    Foto 2
-                  </div>
+                <div style={{ 
+                  position: 'relative', 
+                  background: '#000', 
+                  overflow: 'hidden',
+                  margin: '0 auto',
+                  height: '300px',
+                  width: previewResolution === 'landscape' ? '100%' : previewResolution === 'portrait' ? '168px' : '300px',
+                  transition: 'width 0.3s ease'
+                }}>
+                  {images.length > 0 ? (
+                    <>
+                      <div 
+                        className="preview-slide"
+                        style={{
+                          position: 'absolute',
+                          inset: 0,
+                          animation: `preview-${transitionTypeInput} ${Number(durationInput) + Number(transitionDurationInput)}s infinite`,
+                          animationDuration: `${Number(durationInput) + Number(transitionDurationInput)}s`,
+                          '--trans-duration': `${transitionTypeInput === 'cut' ? 0 : transitionDurationInput}s`,
+                          '--photo-duration': `${durationInput}s`
+                        } as React.CSSProperties}
+                      >
+                        <img src={images[0].file_url} style={{ width: '100%', height: '100%', objectFit: imageFitModeInput as any }} alt="" />
+                      </div>
+                      {images.length > 1 && (
+                        <div 
+                          className="preview-slide"
+                          style={{
+                            position: 'absolute',
+                            inset: 0,
+                            animation: `preview-${transitionTypeInput}-alt ${Number(durationInput) + Number(transitionDurationInput)}s infinite`,
+                            animationDuration: `${Number(durationInput) + Number(transitionDurationInput)}s`,
+                            '--trans-duration': `${transitionTypeInput === 'cut' ? 0 : transitionDurationInput}s`,
+                            '--photo-duration': `${durationInput}s`
+                          } as React.CSSProperties}
+                        >
+                          <img src={images[1].file_url} style={{ width: '100%', height: '100%', objectFit: imageFitModeInput as any }} alt="" />
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#fff' }}>
+                      Adicione fotos para visualizar
+                    </div>
+                  )}
                 </div>
               </div>
             </article>
@@ -1250,6 +1280,15 @@ function TvMode({ accessCode }: { accessCode: string }) {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [message, setMessage] = useState('Inicializando player de mídia...');
   const [currentDay, setCurrentDay] = useState(new Date().getDay());
+  const [resolution, setResolution] = useState({ width: window.innerWidth, height: window.innerHeight });
+
+  useEffect(() => {
+    const handleResize = () => {
+      setResolution({ width: window.innerWidth, height: window.innerHeight });
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
   
   const { settings: audioSettings } = useAudioSettings(company?.id ?? '');
   
@@ -1285,7 +1324,8 @@ function TvMode({ accessCode }: { accessCode: string }) {
       setVoiceovers(prev => JSON.stringify(prev) === JSON.stringify(assets.voiceovers) ? prev : assets.voiceovers);
       setMessage('');
     } catch (err) {
-      setMessage('Erro ao carregar dados da empresa. Código inválido?');
+      console.error('Erro detalhado:', err);
+      setMessage(`Erro ao carregar dados da empresa: ${(err as Error).message}`);
     }
   }, [accessCode]);
 
@@ -1323,9 +1363,15 @@ function TvMode({ accessCode }: { accessCode: string }) {
   const transitionType = company?.transition_type ?? 'fade';
   const transitionDuration = company?.transition_duration_seconds ?? 1.0;
   const photoDuration = company?.image_duration_seconds ?? 10;
+  const imageFitMode = company?.image_fit_mode ?? 'contain';
 
   return (
-    <main className="tv-shell" aria-label="Player de Exibição TV">
+    <main 
+      className="tv-shell" 
+      aria-label="Player de Exibição TV"
+      data-resolution={`${resolution.width}x${resolution.height}`}
+      data-aspect-ratio={(resolution.width / resolution.height).toFixed(2)}
+    >
       {currentImage ? (
         <div 
           key={currentImage.id}
@@ -1341,6 +1387,7 @@ function TvMode({ accessCode }: { accessCode: string }) {
             src={currentImage.file_url}
             alt="Propaganda atual"
             draggable={false}
+            style={{ objectFit: imageFitMode as any }}
           />
         </div>
       ) : (
