@@ -28,7 +28,7 @@ export async function listCompanies() {
   const client = assertSupabase();
   const { data, error } = await client
     .from('companies')
-    .select('id, name, image_duration_seconds, created_at')
+    .select('id, name, access_code, image_duration_seconds, transition_type, transition_duration_seconds, created_at')
     .order('name');
 
   if (error) {
@@ -38,12 +38,42 @@ export async function listCompanies() {
   return data as Company[];
 }
 
+async function generateUniqueAccessCode(client: any): Promise<string> {
+  while (true) {
+    const code = Math.floor(1000 + Math.random() * 9000).toString();
+    const { data } = await client
+      .from('companies')
+      .select('id')
+      .eq('access_code', code)
+      .single();
+    
+    if (!data) return code;
+  }
+}
+
 export async function createCompany(name: string) {
+  const client = assertSupabase();
+  const access_code = await generateUniqueAccessCode(client);
+  
+  const { data, error } = await client
+    .from('companies')
+    .insert({ name: name.trim(), access_code })
+    .select('id, name, access_code, image_duration_seconds, transition_type, transition_duration_seconds, created_at')
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data as Company;
+}
+
+export async function getCompanyByCode(code: string) {
   const client = assertSupabase();
   const { data, error } = await client
     .from('companies')
-    .insert({ name: name.trim() })
-    .select('id, name, image_duration_seconds, created_at')
+    .select('id, name, access_code, image_duration_seconds, transition_type, transition_duration_seconds, created_at')
+    .eq('access_code', code)
     .single();
 
   if (error) {
@@ -84,7 +114,7 @@ export async function listImages(companyId: string) {
   const client = assertSupabase();
   const { data, error } = await client
     .from('images')
-    .select('id, company_id, file_url, file_path, order_index, created_at')
+    .select('id, company_id, file_url, file_path, order_index, active_days, created_at')
     .eq('company_id', companyId)
     .order('order_index');
 
@@ -93,6 +123,18 @@ export async function listImages(companyId: string) {
   }
 
   return data as ImageAsset[];
+}
+
+export async function updateImageDays(imageId: string, days: number[]) {
+  const client = assertSupabase();
+  const { error } = await client
+    .from('images')
+    .update({ active_days: days })
+    .eq('id', imageId);
+
+  if (error) {
+    throw error;
+  }
 }
 
 export async function listAudio(companyId: string, table: MediaKind) {
@@ -143,6 +185,7 @@ export async function uploadImages(companyId: string, files: File[]) {
       file_url: uploaded.fileUrl,
       file_path: uploaded.filePath,
       order_index: nextOrder,
+      active_days: [0, 1, 2, 3, 4, 5, 6],
     });
 
     if (error) {

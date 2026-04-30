@@ -70,13 +70,13 @@ export function buildAlternatingAudioQueue(
   while (musicPool.length > 0 || voicePool.length > 0) {
     if (useMusic && musicPool.length > 0) {
       queue.push(musicPool.shift() as AudioAsset);
-      useMusic = voicePool.length > 0;
+      useMusic = voicePool.length > 0 ? false : true;
       continue;
     }
 
     if (!useMusic && voicePool.length > 0) {
       queue.push(voicePool.shift() as AudioAsset);
-      useMusic = musicPool.length > 0;
+      useMusic = musicPool.length > 0 ? true : false;
       continue;
     }
 

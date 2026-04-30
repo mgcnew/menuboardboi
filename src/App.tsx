@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   createCompany,
   deleteAudio,
   deleteImage,
+  getCompanyByCode,
   isSupabaseConfigured,
   listAudio,
   listCompanies,
@@ -11,13 +12,27 @@ import {
   reorderImages,
   updateCompanyDuration,
   updateCompanyTransition,
+  updateImageDays,
   uploadAudio,
   uploadImages,
 } from './lib/supabase';
-import { compressImageFile, formatBytes, buildAlternatingAudioQueue, getFileName, validateImage, validateAudio } from './lib/utils';
+import { compressImageFile, formatBytes, getFileName, validateImage, validateAudio } from './lib/utils';
+import { useAudioSettings } from './hooks/useAudioSettings';
+import { useAudioMixer } from './hooks/useAudioMixer';
+import { useActiveImages } from './hooks/useActiveImages';
 import type { AudioAsset, Company, ImageAsset, MediaKind } from './types';
 
 const COMPANY_STORAGE_KEY = 'tv-ads-player-company-id';
+
+const WEEK_DAYS = [
+  { label: 'D', title: 'Domingo', value: 0 },
+  { label: 'S', title: 'Segunda', value: 1 },
+  { label: 'T', title: 'Terça', value: 2 },
+  { label: 'Q', title: 'Quarta', value: 3 },
+  { label: 'Q', title: 'Quinta', value: 4 },
+  { label: 'S', title: 'Sexta', value: 5 },
+  { label: 'S', title: 'Sábado', value: 6 },
+];
 
 type LoadableAssets = {
   images: ImageAsset[];
@@ -34,11 +49,11 @@ function readCompanyIdFromUrl(): string {
 }
 
 /**
- * Constrói a URL para acessar o modo TV diretamente.
+ * Constrói a URL para acessar o modo TV diretamente via código.
  */
-function buildTvUrl(companyId: string) {
-  const url = new URL('/tv', window.location.origin);
-  url.searchParams.set('company', companyId);
+function buildTvUrl(accessCode?: string) {
+  if (!accessCode) return '';
+  const url = new URL(`/${accessCode}`, window.location.origin);
   return url.toString();
 }
 
@@ -74,10 +89,13 @@ async function fetchAssets(companyId: string): Promise<LoadableAssets> {
  * Componente principal. Roteia para Modo TV ou Modo Configuração com base na URL.
  */
 function App() {
-  const isTvMode = window.location.pathname.startsWith('/tv');
+  const path = window.location.pathname;
+  // match /1234 or /1234/
+  const isTvMode = /^\/\d{4}\/?$/.test(path);
 
   if (isTvMode) {
-    return <TvMode />;
+    const code = path.match(/\d{4}/)?.[0] || '';
+    return <TvMode accessCode={code} />;
   }
 
   return <ConfigMode />;
@@ -105,6 +123,9 @@ function ConfigMode() {
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; message: string; stats?: { original: number; compressed: number } } | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   
+  // Audio Settings
+  const { settings: audioSettings, updateSettings: setAudioSettings } = useAudioSettings(selectedCompanyId);
+
   // Tab state
   const [activeTab, setActiveTab] = useState<TabId>('company');
   
@@ -334,6 +355,18 @@ function ConfigMode() {
   const isTransitionValid = Number.isFinite(Number(transitionDurationInput)) && Number(transitionDurationInput) >= 0.1 && Number(transitionDurationInput) <= 3;
   const isTotalTimeValid = (Number(durationInput) + Number(transitionDurationInput)) >= 1.5;
 
+  const handleUpdateImageDays = useCallback(async (imageId: string, days: number[]) => {
+    try {
+      setBusy(true);
+      await updateImageDays(imageId, days);
+      setImages((prev) => prev.map(img => img.id === imageId ? { ...img, active_days: days } : img));
+    } catch (error) {
+      setFeedback((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
   const handleSaveDuration = useCallback(async () => {
     if (!selectedCompanyId) {
       return;
@@ -407,7 +440,7 @@ function ConfigMode() {
         {selectedCompanyId ? (
           <a
             className="primary-link"
-            href={buildTvUrl(selectedCompanyId)}
+            href={buildTvUrl(selectedCompany?.access_code)}
             target="_blank"
             rel="noreferrer"
             aria-label={`Abrir modo TV para a empresa ${selectedCompany?.name ?? ''}`}
@@ -562,16 +595,116 @@ function ConfigMode() {
                 )}
               </label>
               <label>
+                Código de Acesso TV
+                <input
+                  type="text"
+                  readOnly
+                  value={selectedCompany.access_code ?? 'N/A'}
+                  aria-label="Código de 4 dígitos para acessar a TV"
+                  style={{ fontWeight: 'bold', fontSize: '1.2rem', letterSpacing: '2px' }}
+                />
+              </label>
+              <label>
                 URL direta do Player
                 <input
                   type="text"
                   readOnly
-                  value={buildTvUrl(selectedCompany.id)}
+                  value={buildTvUrl(selectedCompany.access_code)}
                   aria-label="URL de acesso direto ao player desta empresa"
                   onClick={(e) => e.currentTarget.select()}
                 />
               </label>
             </div>
+          ) : null}
+
+          {selectedCompany ? (
+            <article className="panel" style={{ marginTop: 'var(--space-4)' }}>
+              <header className="section-header">
+                <div>
+                  <h3>Mixagem de Áudio</h3>
+                  <p>Ajuste o volume base, os níveis de redução (ducking) e o intervalo das locuções.</p>
+                </div>
+              </header>
+              <div className="form-grid">
+                <label>
+                  Volume da Música Base (%)
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={Math.round(audioSettings.musicBaseVolume * 100)}
+                    onChange={(e) => setAudioSettings({ musicBaseVolume: Number(e.target.value) / 100 })}
+                  />
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    {Math.round(audioSettings.musicBaseVolume * 100)}%
+                  </span>
+                </label>
+
+                <label>
+                  Volume da Música na Locução (%)
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={Math.round(audioSettings.musicDuckedVolume * 100)}
+                    onChange={(e) => setAudioSettings({ musicDuckedVolume: Number(e.target.value) / 100 })}
+                  />
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    {Math.round(audioSettings.musicDuckedVolume * 100)}%
+                  </span>
+                </label>
+
+                <label>
+                  Volume da Locução (%)
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={Math.round(audioSettings.voiceoverVolume * 100)}
+                    onChange={(e) => setAudioSettings({ voiceoverVolume: Number(e.target.value) / 100 })}
+                  />
+                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                    {Math.round(audioSettings.voiceoverVolume * 100)}%
+                  </span>
+                </label>
+
+                <label>
+                  Tempo de Fade Out (segundos)
+                  <input
+                    type="number"
+                    min="0.1"
+                    max="5.0"
+                    step="0.1"
+                    value={audioSettings.duckingFadeOutTime}
+                    onChange={(e) => setAudioSettings({ duckingFadeOutTime: Number(e.target.value) })}
+                  />
+                </label>
+
+                <label>
+                  Tempo de Fade In (segundos)
+                  <input
+                    type="number"
+                    min="0.1"
+                    max="5.0"
+                    step="0.1"
+                    value={audioSettings.duckingFadeInTime}
+                    onChange={(e) => setAudioSettings({ duckingFadeInTime: Number(e.target.value) })}
+                  />
+                </label>
+
+                <label>
+                  Intervalo entre Locuções (minutos)
+                  <input
+                    type="number"
+                    min="1"
+                    max="60"
+                    step="1"
+                    value={audioSettings.voiceoverIntervalMinutes}
+                    onChange={(e) => setAudioSettings({ voiceoverIntervalMinutes: Number(e.target.value) })}
+                  />
+                </label>
+              </div>
+            </article>
           ) : null}
         </section>
 
@@ -740,6 +873,43 @@ function ConfigMode() {
                       <strong>{getFileName(image.file_url)}</strong>
                       <span>Ordem de exibição: {index + 1}</span>
                     </div>
+                    
+                    <div className="image-card-scheduling">
+                      <span className="scheduling-label">Exibir nos dias:</span>
+                      <div className="day-selector">
+                        {WEEK_DAYS.map((day) => {
+                          const activeDays = image.active_days ?? [0, 1, 2, 3, 4, 5, 6];
+                          const isActive = activeDays.includes(day.value);
+                          return (
+                            <button
+                              key={day.value}
+                              type="button"
+                              className={`day-btn ${isActive ? 'active' : ''}`}
+                              title={day.title}
+                              disabled={busy}
+                              onClick={() => {
+                                let newDays = [...activeDays];
+                                if (isActive) {
+                                  // Impede de desmarcar todos os dias
+                                  if (activeDays.length > 1) {
+                                    newDays = activeDays.filter((d) => d !== day.value);
+                                  } else {
+                                    return; // não faz nada se tentar remover o último
+                                  }
+                                } else {
+                                  newDays.push(day.value);
+                                  newDays.sort();
+                                }
+                                void handleUpdateImageDays(image.id, newDays);
+                              }}
+                            >
+                              {day.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
                     <div className="image-card-actions">
                       <button
                         type="button"
@@ -1033,24 +1203,21 @@ function EmptyState({ text }: { text: string }) {
 /**
  * Modo TV: Interface de exibição limpa (fullscreen) com reprodução automática.
  */
-function TvMode() {
+function TvMode({ accessCode }: { accessCode: string }) {
   const [company, setCompany] = useState<Company | null>(null);
   const [images, setImages] = useState<ImageAsset[]>([]);
   const [music, setMusic] = useState<AudioAsset[]>([]);
   const [voiceovers, setVoiceovers] = useState<AudioAsset[]>([]);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [message, setMessage] = useState('Inicializando player de mídia...');
+  const [currentDay, setCurrentDay] = useState(new Date().getDay());
   
-  // Audio Crossfade Logic
-  const audioPlayers = useRef<[HTMLAudioElement, HTMLAudioElement]>([
-    new Audio(),
-    new Audio()
-  ]);
-  const activePlayerIndex = useRef(0);
-  const queueRef = useRef<AudioAsset[]>([]);
-  const CROSSFADE_TIME = 2.5; // Segundos para o crossfade
+  const { settings: audioSettings } = useAudioSettings(company?.id ?? '');
   
-  const companyId = readCompanyIdFromUrl();
+  // Audio Playback Logic via Custom Hook
+  useAudioMixer(music, voiceovers, audioSettings);
+
+  const activeImages = useActiveImages(images, currentDay);
 
   const loadPlayerData = useCallback(async () => {
     if (!isSupabaseConfigured) {
@@ -1058,147 +1225,62 @@ function TvMode() {
       return;
     }
 
-    if (!companyId) {
-      setMessage('Nenhuma empresa selecionada. Informe ?company=<id> na URL.');
+    if (!accessCode) {
+      setMessage('Código de acesso inválido.');
       return;
     }
-
-    const companyList = await listCompanies();
-    const activeCompany = companyList.find((item) => item.id === companyId) ?? null;
-
-    if (!activeCompany) {
-      setMessage('Erro: A empresa solicitada não foi encontrada no sistema.');
-      return;
-    }
-
-    const assets = await fetchAssets(companyId);
-    setCompany(activeCompany);
-    setImages(assets.images);
-    setMusic(assets.music);
-    setVoiceovers(assets.voiceovers);
-    setMessage('');
-  }, [companyId]);
-
-  const fadeAudio = (audio: HTMLAudioElement, direction: 'in' | 'out', duration: number) => {
-    const startVol = direction === 'in' ? 0 : 1;
-    const endVol = direction === 'in' ? 1 : 0;
-    const steps = 20;
-    const interval = (duration * 1000) / steps;
-    const volStep = (endVol - startVol) / steps;
-
-    audio.volume = startVol;
-    
-    let currentStep = 0;
-    const timer = setInterval(() => {
-      currentStep++;
-      const nextVol = startVol + volStep * currentStep;
-      audio.volume = Math.max(0, Math.min(1, nextVol));
-      
-      if (currentStep >= steps) {
-        clearInterval(timer);
-        if (direction === 'out') {
-          audio.pause();
-          audio.src = '';
-        }
-      }
-    }, interval);
-  };
-
-  const playNextAudio = useCallback(async () => {
-    if (music.length === 0 && voiceovers.length === 0) return;
-
-    if (queueRef.current.length === 0) {
-      queueRef.current = buildAlternatingAudioQueue(music, voiceovers);
-    }
-
-    const nextAsset = queueRef.current.shift();
-    if (!nextAsset) return;
-
-    // Alterna entre os dois players
-    const currentPlayer = audioPlayers.current[activePlayerIndex.current];
-    activePlayerIndex.current = (activePlayerIndex.current + 1) % 2;
-    const nextPlayer = audioPlayers.current[activePlayerIndex.current];
-
-    // Inicia o fade out do player atual se ele estiver tocando
-    if (!currentPlayer.paused) {
-      fadeAudio(currentPlayer, 'out', CROSSFADE_TIME);
-    }
-
-    nextPlayer.src = nextAsset.file_url;
-    nextPlayer.load();
-    nextPlayer.volume = 0;
-
-    nextPlayer.onerror = () => {
-      console.error(`Falha ao decodificar/reproduzir formato: ${nextAsset.file_url}`);
-      // Pula imediatamente para a próxima faixa
-      void playNextAudio();
-    };
 
     try {
-      await nextPlayer.play();
-      fadeAudio(nextPlayer, 'in', CROSSFADE_TIME);
-      
-      // Monitora o fim da faixa para iniciar o próximo crossfade
-      const checkEnd = () => {
-        const remaining = nextPlayer.duration - nextPlayer.currentTime;
-        if (remaining <= CROSSFADE_TIME) {
-          nextPlayer.removeEventListener('timeupdate', checkEnd);
-          void playNextAudio();
-        }
-      };
+      const activeCompany = await getCompanyByCode(accessCode);
 
-      nextPlayer.addEventListener('timeupdate', checkEnd);
+      if (!activeCompany) {
+        setMessage('Erro: Código de acesso inválido ou empresa não encontrada.');
+        return;
+      }
+
+      const assets = await fetchAssets(activeCompany.id);
+      
+      setCompany(prev => JSON.stringify(prev) === JSON.stringify(activeCompany) ? prev : activeCompany);
+      setImages(prev => JSON.stringify(prev) === JSON.stringify(assets.images) ? prev : assets.images);
+      setMusic(prev => JSON.stringify(prev) === JSON.stringify(assets.music) ? prev : assets.music);
+      setVoiceovers(prev => JSON.stringify(prev) === JSON.stringify(assets.voiceovers) ? prev : assets.voiceovers);
+      setMessage('');
     } catch (err) {
-      console.error('Erro ao tocar áudio:', err);
-      // Tenta o próximo em caso de erro
-      void playNextAudio();
+      setMessage('Erro ao carregar dados da empresa. Código inválido?');
     }
-  }, [music, voiceovers]);
+  }, [accessCode]);
 
   useEffect(() => {
     void loadPlayerData().catch((error: Error) => setMessage(error.message));
 
     const refreshTimer = window.setInterval(() => {
       void loadPlayerData().catch((error: Error) => setMessage(error.message));
+      setCurrentDay(new Date().getDay());
     }, 30000);
 
     return () => window.clearInterval(refreshTimer);
   }, [loadPlayerData]);
 
   useEffect(() => {
-    if (images.length === 0) {
+    if (activeImages.length === 0) {
       setCurrentImageIndex(0);
       return;
     }
 
-    const preloadLimit = Math.min(images.length, 6);
-    images.slice(0, preloadLimit).forEach((image) => {
+    const preloadLimit = Math.min(activeImages.length, 6);
+    activeImages.slice(0, preloadLimit).forEach((image) => {
       const img = new Image();
       img.src = image.file_url;
     });
 
     const timer = window.setInterval(() => {
-      setCurrentImageIndex((index) => (index + 1) % images.length);
+      setCurrentImageIndex((index) => (index + 1) % activeImages.length);
     }, (company?.image_duration_seconds ?? 10) * 1000 + (company?.transition_duration_seconds ?? 1) * 1000);
 
     return () => window.clearInterval(timer);
-  }, [company?.image_duration_seconds, company?.transition_duration_seconds, images]);
+  }, [company?.image_duration_seconds, company?.transition_duration_seconds, activeImages]);
 
-  useEffect(() => {
-    queueRef.current = [];
-    if (music.length > 0 || voiceovers.length > 0) {
-      void playNextAudio();
-    }
-
-    return () => {
-      audioPlayers.current.forEach(p => {
-        p.pause();
-        p.src = '';
-      });
-    };
-  }, [music, voiceovers, playNextAudio]);
-
-  const currentImage = images[currentImageIndex];
+  const currentImage = activeImages[currentImageIndex];
   const transitionType = company?.transition_type ?? 'fade';
   const transitionDuration = company?.transition_duration_seconds ?? 1.0;
   const photoDuration = company?.image_duration_seconds ?? 10;

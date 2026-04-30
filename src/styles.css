@@ -704,6 +704,56 @@ button.danger:hover {
   color: var(--text-secondary);
 }
 
+/* Image Scheduling */
+.image-card-scheduling {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.scheduling-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.day-selector {
+  display: flex;
+  gap: 4px;
+}
+
+.day-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  font-weight: bold;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.2s;
+}
+
+.day-btn:hover:not(:disabled) {
+  border-color: var(--border-focus);
+  color: var(--border-focus);
+  background: var(--bg-subtle);
+}
+
+.day-btn.active {
+  background: var(--border-focus);
+  color: #fff;
+  border-color: var(--border-focus);
+}
+
+.day-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .image-card-actions {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
