@@ -8,6 +8,18 @@ export type Company = {
   created_at: string;
 };
 
+export type UserRole = 'client' | 'master_admin' | 'admin_empresa' | 'editor' | 'visualizador';
+
+export type Profile = {
+  id: string;
+  company_id: string | null;
+  role: UserRole;
+  full_name: string | null;
+  avatar_url: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ImageAsset = {
   id: string;
   company_id: string;
@@ -35,4 +47,14 @@ export type AudioSettings = {
   duckingFadeOutTime: number; // seconds (time to reduce volume)
   duckingFadeInTime: number; // seconds (time to restore volume)
   voiceoverIntervalMinutes: number; // minutes between voiceovers
+};
+
+export type CompanyUsage = {
+  id: string;
+  company_id: string;
+  monthly_images_uploaded: number;
+  monthly_storage_bytes: number;
+  billing_cycle_month: number;
+  billing_cycle_year: number;
+  created_at: string;
 };

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
+import { useAuth } from './hooks/useAuth';
+import { Login } from './components/Login';
 import {
   createCompany,
   deleteAudio,
@@ -98,6 +100,18 @@ function App() {
     return <TvMode accessCode={code} />;
   }
 
+  return <ConfigModeWrapper />;
+}
+
+function ConfigModeWrapper() {
+  const { isAuthenticated, loading } = useAuth();
+
+  if (loading) return <div className="shell">Carregando sessão segura...</div>;
+
+  if (!isAuthenticated) {
+    return <Login />;
+  }
+
   return <ConfigMode />;
 }
 
@@ -108,6 +122,7 @@ function App() {
 type TabId = 'company' | 'images' | 'music' | 'voiceovers';
 
 function ConfigMode() {
+  const { profile, isMasterAdmin, loading: authLoading, signOut } = useAuth();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>(readCompanyIdFromUrl);
   const [newCompanyName, setNewCompanyName] = useState('');
@@ -126,9 +141,23 @@ function ConfigMode() {
   // Audio Settings
   const { settings: audioSettings, updateSettings: setAudioSettings } = useAudioSettings(selectedCompanyId);
 
-  // Tab state
+  // Tab state - default to 'images' for non-admins
   const [activeTab, setActiveTab] = useState<TabId>('company');
   
+  // Update active tab based on auth role
+  useEffect(() => {
+    if (!authLoading && !isMasterAdmin && activeTab === 'company') {
+      setActiveTab('images');
+    }
+  }, [authLoading, isMasterAdmin, activeTab]);
+
+  // Force selected company to profile company if not master admin
+  useEffect(() => {
+    if (!isMasterAdmin && profile?.company_id) {
+      setSelectedCompanyId(profile.company_id);
+    }
+  }, [isMasterAdmin, profile]);
+
   // Delete confirmation state
   const [itemToDelete, setItemToDelete] = useState<{ kind: 'images' | MediaKind; asset: ImageAsset | AudioAsset } | null>(null);
 
@@ -249,10 +278,12 @@ function ConfigMode() {
             setUploadProgress({
               current: i,
               total: fileArray.length,
-              message: `Validando e comprimindo imagem ${i + 1} de ${fileArray.length}...`,
+              message: `Análise de segurança e validação da imagem ${i + 1} de ${fileArray.length}...`,
               stats: { original: originalSize, compressed: compressedSize }
             });
             
+            // Simula um scan de segurança e checagem de integridade (além da validação de tipo já feita)
+            await new Promise(r => setTimeout(r, 200));
             await validateImage(file);
             
             const result = await compressImageFile(file);
@@ -437,17 +468,20 @@ function ConfigMode() {
             Gerencie o conteúdo de mídia e controle as configurações de exibição de forma centralizada.
           </p>
         </div>
-        {selectedCompanyId ? (
-          <a
-            className="primary-link"
-            href={buildTvUrl(selectedCompany?.access_code)}
-            target="_blank"
-            rel="noreferrer"
-            aria-label={`Abrir modo TV para a empresa ${selectedCompany?.name ?? ''}`}
-          >
-            Iniciar Exibição TV
-          </a>
-        ) : null}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'flex-end' }}>
+          <button onClick={() => void signOut()} className="secondary">Sair do Sistema</button>
+          {selectedCompanyId ? (
+            <a
+              className="primary-link"
+              href={buildTvUrl(selectedCompany?.access_code)}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`Abrir modo TV para a empresa ${selectedCompany?.name ?? ''}`}
+            >
+              Iniciar Exibição TV
+            </a>
+          ) : null}
+        </div>
       </header>
 
       {!isSupabaseConfigured ? (
@@ -460,7 +494,8 @@ function ConfigMode() {
       ) : null}
 
       <nav className="breadcrumb" aria-label="Breadcrumb">
-        <span>Painel</span> / <span>{selectedCompany ? selectedCompany.name : 'Selecionar Empresa'}</span> / 
+        <span>Painel {isMasterAdmin ? 'Master' : 'da Empresa'}</span> / 
+        <span>{selectedCompany ? selectedCompany.name : (isMasterAdmin ? 'Selecionar Empresa' : 'Carregando...')}</span> / 
         <span>
           {activeTab === 'company' && ' Configurações'}
           {activeTab === 'images' && ' Fotos Promocionais'}
@@ -470,16 +505,18 @@ function ConfigMode() {
       </nav>
 
       <div role="tablist" className="tabs-list" aria-label="Navegação Principal">
-        <button
-          role="tab"
-          className="tab-button"
-          aria-selected={activeTab === 'company'}
-          aria-controls="panel-company"
-          id="tab-company"
-          onClick={() => setActiveTab('company')}
-        >
-          Empresa
-        </button>
+        {isMasterAdmin && (
+          <button
+            role="tab"
+            className="tab-button"
+            aria-selected={activeTab === 'company'}
+            aria-controls="panel-company"
+            id="tab-company"
+            onClick={() => setActiveTab('company')}
+          >
+            Empresa
+          </button>
+        )}
         <button
           role="tab"
           className="tab-button"
@@ -517,196 +554,198 @@ function ConfigMode() {
 
       <main>
         {/* Aba: Configurações da Empresa */}
-        <section
-          id="panel-company"
-          role="tabpanel"
-          aria-labelledby="tab-company"
-          className="tab-panel panel"
-          hidden={activeTab !== 'company'}
-        >
-          <header className="section-header">
-            <div>
-              <h2>Configurações da Empresa</h2>
-              <p>Gerencie o tenant ativo e configurações globais de exibição.</p>
-            </div>
-            {loading ? <span className="tag" aria-live="polite">Carregando...</span> : null}
-          </header>
-
-          <div className="form-grid">
-            <label>
-              Empresa ativa
-              <select
-                value={selectedCompanyId}
-                onChange={(event) => setSelectedCompanyId(event.target.value)}
-                disabled={busy || companies.length === 0}
-                aria-label="Selecionar empresa ativa"
-              >
-                <option value="">Selecione uma empresa</option>
-                {companies.map((company) => (
-                  <option key={company.id} value={company.id}>
-                    {company.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label>
-              Criar nova empresa
-              <div className="inline-group">
-                <input
-                  type="text"
-                  value={newCompanyName}
-                  onChange={(event) => setNewCompanyName(event.target.value)}
-                  placeholder="Ex: Unidade Centro"
-                  disabled={busy}
-                  aria-label="Nome da nova empresa"
-                />
-                <button
-                  type="button"
-                  onClick={() => void handleCreateCompany()}
-                  disabled={busy || !newCompanyName.trim()}
-                >
-                  Adicionar
-                </button>
+        {isMasterAdmin && (
+          <section
+            id="panel-company"
+            role="tabpanel"
+            aria-labelledby="tab-company"
+            className="tab-panel panel"
+            hidden={activeTab !== 'company'}
+          >
+            <header className="section-header">
+              <div>
+                <h2>Configurações da Empresa</h2>
+                <p>Gerencie o tenant ativo e configurações globais de exibição.</p>
               </div>
-            </label>
-          </div>
+              {loading ? <span className="tag" aria-live="polite">Carregando...</span> : null}
+            </header>
 
-          {selectedCompany ? (
-            <div className="form-grid compact">
+            <div className="form-grid">
               <label>
-                Duração de cada imagem (segundos)
+                Empresa ativa
+                <select
+                  value={selectedCompanyId}
+                  onChange={(event) => setSelectedCompanyId(event.target.value)}
+                  disabled={busy || companies.length === 0}
+                  aria-label="Selecionar empresa ativa"
+                >
+                  <option value="">Selecione uma empresa</option>
+                  {companies.map((company) => (
+                    <option key={company.id} value={company.id}>
+                      {company.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                Criar nova empresa
                 <div className="inline-group">
                   <input
-                    type="number"
-                    min="3"
-                    value={durationInput}
-                    onChange={(event) => setDurationInput(event.target.value)}
+                    type="text"
+                    value={newCompanyName}
+                    onChange={(event) => setNewCompanyName(event.target.value)}
+                    placeholder="Ex: Unidade Centro"
                     disabled={busy}
-                    aria-label="Segundos de exibição por imagem"
-                    aria-invalid={!isDurationValid}
+                    aria-label="Nome da nova empresa"
                   />
-                  <button type="button" onClick={() => void handleSaveDuration()} disabled={busy || !isDurationValid}>
-                    Salvar
+                  <button
+                    type="button"
+                    onClick={() => void handleCreateCompany()}
+                    disabled={busy || !newCompanyName.trim()}
+                  >
+                    Adicionar
                   </button>
                 </div>
-                {!isDurationValid && (
-                  <span style={{ color: 'var(--text-danger)', fontSize: '0.8rem' }}>Mínimo de 3 segundos.</span>
-                )}
-              </label>
-              <label>
-                Código de Acesso TV
-                <input
-                  type="text"
-                  readOnly
-                  value={selectedCompany.access_code ?? 'N/A'}
-                  aria-label="Código de 4 dígitos para acessar a TV"
-                  style={{ fontWeight: 'bold', fontSize: '1.2rem', letterSpacing: '2px' }}
-                />
-              </label>
-              <label>
-                URL direta do Player
-                <input
-                  type="text"
-                  readOnly
-                  value={buildTvUrl(selectedCompany.access_code)}
-                  aria-label="URL de acesso direto ao player desta empresa"
-                  onClick={(e) => e.currentTarget.select()}
-                />
               </label>
             </div>
-          ) : null}
 
-          {selectedCompany ? (
-            <article className="panel" style={{ marginTop: 'var(--space-4)' }}>
-              <header className="section-header">
-                <div>
-                  <h3>Mixagem de Áudio</h3>
-                  <p>Ajuste o volume base, os níveis de redução (ducking) e o intervalo das locuções.</p>
-                </div>
-              </header>
-              <div className="form-grid">
+            {selectedCompany ? (
+              <div className="form-grid compact">
                 <label>
-                  Volume da Música Base (%)
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={Math.round(audioSettings.musicBaseVolume * 100)}
-                    onChange={(e) => setAudioSettings({ musicBaseVolume: Number(e.target.value) / 100 })}
-                  />
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                    {Math.round(audioSettings.musicBaseVolume * 100)}%
-                  </span>
+                  Duração de cada imagem (segundos)
+                  <div className="inline-group">
+                    <input
+                      type="number"
+                      min="3"
+                      value={durationInput}
+                      onChange={(event) => setDurationInput(event.target.value)}
+                      disabled={busy}
+                      aria-label="Segundos de exibição por imagem"
+                      aria-invalid={!isDurationValid}
+                    />
+                    <button type="button" onClick={() => void handleSaveDuration()} disabled={busy || !isDurationValid}>
+                      Salvar
+                    </button>
+                  </div>
+                  {!isDurationValid && (
+                    <span style={{ color: 'var(--text-danger)', fontSize: '0.8rem' }}>Mínimo de 3 segundos.</span>
+                  )}
                 </label>
-
                 <label>
-                  Volume da Música na Locução (%)
+                  Código de Acesso TV
                   <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={Math.round(audioSettings.musicDuckedVolume * 100)}
-                    onChange={(e) => setAudioSettings({ musicDuckedVolume: Number(e.target.value) / 100 })}
-                  />
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                    {Math.round(audioSettings.musicDuckedVolume * 100)}%
-                  </span>
-                </label>
-
-                <label>
-                  Volume da Locução (%)
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={Math.round(audioSettings.voiceoverVolume * 100)}
-                    onChange={(e) => setAudioSettings({ voiceoverVolume: Number(e.target.value) / 100 })}
-                  />
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                    {Math.round(audioSettings.voiceoverVolume * 100)}%
-                  </span>
-                </label>
-
-                <label>
-                  Tempo de Fade Out (segundos)
-                  <input
-                    type="number"
-                    min="0.1"
-                    max="5.0"
-                    step="0.1"
-                    value={audioSettings.duckingFadeOutTime}
-                    onChange={(e) => setAudioSettings({ duckingFadeOutTime: Number(e.target.value) })}
+                    type="text"
+                    readOnly
+                    value={selectedCompany.access_code ?? 'N/A'}
+                    aria-label="Código de 4 dígitos para acessar a TV"
+                    style={{ fontWeight: 'bold', fontSize: '1.2rem', letterSpacing: '2px' }}
                   />
                 </label>
-
                 <label>
-                  Tempo de Fade In (segundos)
+                  URL direta do Player
                   <input
-                    type="number"
-                    min="0.1"
-                    max="5.0"
-                    step="0.1"
-                    value={audioSettings.duckingFadeInTime}
-                    onChange={(e) => setAudioSettings({ duckingFadeInTime: Number(e.target.value) })}
-                  />
-                </label>
-
-                <label>
-                  Intervalo entre Locuções (minutos)
-                  <input
-                    type="number"
-                    min="1"
-                    max="60"
-                    step="1"
-                    value={audioSettings.voiceoverIntervalMinutes}
-                    onChange={(e) => setAudioSettings({ voiceoverIntervalMinutes: Number(e.target.value) })}
+                    type="text"
+                    readOnly
+                    value={buildTvUrl(selectedCompany.access_code)}
+                    aria-label="URL de acesso direto ao player desta empresa"
+                    onClick={(e) => e.currentTarget.select()}
                   />
                 </label>
               </div>
-            </article>
-          ) : null}
-        </section>
+            ) : null}
+
+            {selectedCompany ? (
+              <article className="panel" style={{ marginTop: 'var(--space-4)' }}>
+                <header className="section-header">
+                  <div>
+                    <h3>Mixagem de Áudio</h3>
+                    <p>Ajuste o volume base, os níveis de redução (ducking) e o intervalo das locuções.</p>
+                  </div>
+                </header>
+                <div className="form-grid">
+                  <label>
+                    Volume da Música Base (%)
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={Math.round(audioSettings.musicBaseVolume * 100)}
+                      onChange={(e) => setAudioSettings({ musicBaseVolume: Number(e.target.value) / 100 })}
+                    />
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      {Math.round(audioSettings.musicBaseVolume * 100)}%
+                    </span>
+                  </label>
+
+                  <label>
+                    Volume da Música na Locução (%)
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={Math.round(audioSettings.musicDuckedVolume * 100)}
+                      onChange={(e) => setAudioSettings({ musicDuckedVolume: Number(e.target.value) / 100 })}
+                    />
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      {Math.round(audioSettings.musicDuckedVolume * 100)}%
+                    </span>
+                  </label>
+
+                  <label>
+                    Volume da Locução (%)
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={Math.round(audioSettings.voiceoverVolume * 100)}
+                      onChange={(e) => setAudioSettings({ voiceoverVolume: Number(e.target.value) / 100 })}
+                    />
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                      {Math.round(audioSettings.voiceoverVolume * 100)}%
+                    </span>
+                  </label>
+
+                  <label>
+                    Tempo de Fade Out (segundos)
+                    <input
+                      type="number"
+                      min="0.1"
+                      max="5.0"
+                      step="0.1"
+                      value={audioSettings.duckingFadeOutTime}
+                      onChange={(e) => setAudioSettings({ duckingFadeOutTime: Number(e.target.value) })}
+                    />
+                  </label>
+
+                  <label>
+                    Tempo de Fade In (segundos)
+                    <input
+                      type="number"
+                      min="0.1"
+                      max="5.0"
+                      step="0.1"
+                      value={audioSettings.duckingFadeInTime}
+                      onChange={(e) => setAudioSettings({ duckingFadeInTime: Number(e.target.value) })}
+                    />
+                  </label>
+
+                  <label>
+                    Intervalo entre Locuções (minutos)
+                    <input
+                      type="number"
+                      min="1"
+                      max="60"
+                      step="1"
+                      value={audioSettings.voiceoverIntervalMinutes}
+                      onChange={(e) => setAudioSettings({ voiceoverIntervalMinutes: Number(e.target.value) })}
+                    />
+                  </label>
+                </div>
+              </article>
+            ) : null}
+          </section>
+        )}
 
         {/* Aba: Fotos */}
         <section

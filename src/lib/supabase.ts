@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import type { AudioAsset, Company, ImageAsset, MediaKind } from '../types';
+import type { AudioAsset, Company, ImageAsset, MediaKind, Profile, CompanyUsage, UserRole } from '../types';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -173,10 +173,33 @@ async function uploadToBucket(bucket: MediaKind | 'images', companyId: string, f
   };
 }
 
+export async function checkStorageQuota(companyId: string, newBytes: number): Promise<boolean> {
+  const client = assertSupabase();
+  const { data, error } = await client
+    .from('vw_company_storage_usage')
+    .select('used_bytes, storage_quota_bytes')
+    .eq('company_id', companyId)
+    .single();
+    
+  if (error || !data) {
+    console.warn('Erro ao verificar quota ou view não encontrada:', error);
+    return true; // Fallback permitindo caso a view não esteja criada
+  }
+  
+  if (data.used_bytes + newBytes > data.storage_quota_bytes) {
+    throw new Error(`Quota de armazenamento excedida. O limite é ${Math.round(data.storage_quota_bytes / 1024 / 1024)}MB.`);
+  }
+  
+  return true;
+}
+
 export async function uploadImages(companyId: string, files: File[]) {
   const client = assertSupabase();
   const currentImages = await listImages(companyId);
   let nextOrder = currentImages.length;
+
+  const totalSize = files.reduce((acc, file) => acc + file.size, 0);
+  await checkStorageQuota(companyId, totalSize);
 
   for (const file of files) {
     const uploaded = await uploadToBucket('images', companyId, file);
@@ -198,6 +221,9 @@ export async function uploadImages(companyId: string, files: File[]) {
 
 export async function uploadAudio(companyId: string, table: MediaKind, files: File[]) {
   const client = assertSupabase();
+
+  const totalSize = files.reduce((acc, file) => acc + file.size, 0);
+  await checkStorageQuota(companyId, totalSize);
 
   for (const file of files) {
     const uploaded = await uploadToBucket(table, companyId, file);
@@ -258,4 +284,119 @@ export async function reorderImages(companyId: string, orderedImages: ImageAsset
       }
     }),
   );
+}
+
+// Multi-Tenancy e Autenticação
+export async function getProfile(userId: string) {
+  const client = assertSupabase();
+  const { data, error } = await client
+    .from('profiles')
+    .select('*')
+    .eq('id', userId)
+    .single();
+
+  if (error) {
+    throw error;
+  }
+
+  return data as Profile;
+}
+
+export async function updateProfile(userId: string, updates: Partial<Pick<Profile, 'full_name' | 'avatar_url'>>) {
+  const client = assertSupabase();
+  const { error } = await client
+    .from('profiles')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', userId);
+
+  if (error) {
+    throw error;
+  }
+}
+
+export async function getCompanyUsage(companyId: string, year: number, month: number) {
+  const client = assertSupabase();
+  const { data, error } = await client
+    .from('company_usage')
+    .select('*')
+    .eq('company_id', companyId)
+    .eq('billing_cycle_year', year)
+    .eq('billing_cycle_month', month)
+    .single();
+
+  if (error && error.code !== 'PGRST116') {
+    throw error;
+  }
+
+  return data as CompanyUsage | null;
+}
+
+export async function listAllCompaniesForMasterAdmin() {
+  const client = assertSupabase();
+  const { data, error } = await client
+    .from('companies')
+    .select('*')
+    .order('name');
+
+  if (error) {
+    throw error;
+  }
+
+  return data as Company[];
+}
+
+// Busca o perfil completo do usuário usando as tabelas enterprise_users, user_companies e roles
+export async function getEnterpriseProfile(userId: string) {
+  const client = assertSupabase();
+  
+  // 1. Busca enterprise_users
+  const { data: euData, error: euError } = await client
+    .from('enterprise_users')
+    .select('id, auth_user_id, email')
+    .eq('auth_user_id', userId)
+    .single();
+
+  if (euError) {
+    try {
+      // Fallback para o perfil antigo (se existir)
+      return await getProfile(userId);
+    } catch {
+      throw euError;
+    }
+  }
+
+  // 2. Busca user_companies
+  const { data: ucData } = await client
+    .from('user_companies')
+    .select('id, company_id, role_id')
+    .eq('user_id', euData.id)
+    .maybeSingle();
+
+  let roleName: UserRole = 'client';
+  let companyId: string | null = null;
+
+  if (ucData) {
+    companyId = ucData.company_id;
+    // 3. Busca a role
+    const { data: roleData } = await client
+      .from('roles')
+      .select('name')
+      .eq('id', ucData.role_id)
+      .single();
+
+    if (roleData) {
+      roleName = roleData.name as UserRole;
+    }
+  }
+
+  return {
+    id: euData.id,
+    auth_user_id: euData.auth_user_id,
+    company_id: companyId,
+    role: roleName,
+    full_name: null,
+    avatar_url: null,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString()
+  };
 }
