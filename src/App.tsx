@@ -17,6 +17,7 @@ import {
   updateImageDays,
   uploadAudio,
   uploadImages,
+  supabase,
 } from './lib/supabase';
 import { compressImageFile, formatBytes, getFileName, validateImage, validateAudio } from './lib/utils';
 import { useAudioSettings } from './hooks/useAudioSettings';
@@ -1328,13 +1329,29 @@ function TvMode({ accessCode }: { accessCode: string }) {
   useEffect(() => {
     void loadPlayerData().catch((error: Error) => setMessage(error.message));
 
+    // Fallback: recarrega os dados a cada 10 segundos
     const refreshTimer = window.setInterval(() => {
       void loadPlayerData().catch((error: Error) => setMessage(error.message));
       setCurrentDay(new Date().getDay());
-    }, 30000);
+    }, 10000);
 
     return () => window.clearInterval(refreshTimer);
   }, [loadPlayerData]);
+
+  // Supabase Realtime (Atualização instantânea)
+  useEffect(() => {
+    if (!company?.id || !isSupabaseConfigured) return;
+
+    const channel = supabase!.channel('tv-updates')
+      .on('postgres_changes', { event: '*', schema: 'public' }, () => {
+        void loadPlayerData();
+      })
+      .subscribe();
+
+    return () => {
+      void supabase!.removeChannel(channel);
+    };
+  }, [company?.id, loadPlayerData]);
 
   useEffect(() => {
     if (activeImages.length === 0) {
