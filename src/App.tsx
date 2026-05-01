@@ -823,17 +823,14 @@ function ConfigMode() {
               </div>
 
               <div className="presets-container" style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-4)', flexWrap: 'wrap' }}>
-                <button type="button" className="secondary" onClick={() => handlePreset('10', 'fade', '1.0', 'cover')}>
-                  Full HD Perfeito (Sem listras)
-                </button>
                 <button type="button" className="secondary" onClick={() => handlePreset('10', 'fade', '1.0', 'contain')}>
-                  Monitor Horizontal (Manter proporção)
+                  Manter Proporção (Sem cortes, pode ter listras)
                 </button>
                 <button type="button" className="secondary" onClick={() => handlePreset('10', 'fade', '1.0', 'cover')}>
-                  Monitor Vertical (Em pé)
+                  Preencher Tela (Corta sobras, sem listras)
                 </button>
-                <button type="button" className="secondary" onClick={() => handlePreset('10', 'fade', '1.0', 'contain')}>
-                  Monitor Quadrado (1:1)
+                <button type="button" className="secondary" onClick={() => handlePreset('10', 'fade', '1.0', 'fill')}>
+                  Esticar Exato (Preenche tudo, mas distorce)
                 </button>
                 
                 <button 
@@ -1368,14 +1365,51 @@ function TvMode({ accessCode }: { accessCode: string }) {
   const photoDuration = company?.image_duration_seconds ?? 10;
   const imageFitMode = company?.image_fit_mode ?? 'contain';
 
+  const handleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(err => {
+        console.error(`Erro ao tentar tela cheia: ${err.message}`);
+      });
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      }
+    }
+  };
+
   return (
     <main 
       className="tv-shell" 
       aria-label="Player de Exibição TV"
       data-resolution={`${resolution.width}x${resolution.height}`}
       data-aspect-ratio={(resolution.width / resolution.height).toFixed(2)}
-      style={{ backgroundColor: '#000', margin: 0, padding: 0, width: '100vw', height: '100vh', position: 'fixed', inset: 0, overflow: 'hidden' }}
+      style={{ backgroundColor: '#000', margin: 0, padding: 0, width: '100vw', height: '100dvh', position: 'fixed', inset: 0, overflow: 'hidden' }}
+      onDoubleClick={handleFullscreen}
     >
+      <button 
+        onClick={handleFullscreen}
+        style={{ 
+          position: 'absolute', 
+          bottom: '20px', 
+          right: '20px', 
+          zIndex: 9999, 
+          opacity: 0.3, 
+          background: 'rgba(0,0,0,0.5)', 
+          color: 'white', 
+          border: '1px solid rgba(255,255,255,0.2)', 
+          padding: '8px 12px', 
+          borderRadius: '4px', 
+          cursor: 'pointer',
+          fontSize: '0.8rem',
+          transition: 'opacity 0.2s'
+        }}
+        onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+        onMouseLeave={(e) => e.currentTarget.style.opacity = '0.3'}
+        title="Dê um duplo-clique em qualquer lugar ou clique aqui para Tela Cheia"
+      >
+        ⛶ Tela Cheia
+      </button>
+
       {currentImage ? (
         <div 
           key={currentImage.id}
