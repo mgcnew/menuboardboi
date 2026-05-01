@@ -27,7 +27,14 @@ export function useAuth() {
     // Carregar sessão inicial
     const init = async () => {
       try {
+        // Fallback de segurança para garantir que o loading não trave
+        const timeoutId = setTimeout(() => {
+          setLoading(false);
+        }, 5000);
+
         const { data: { session: initialSession } } = await supabase!.auth.getSession();
+        clearTimeout(timeoutId);
+        
         setSession(initialSession);
 
         if (initialSession?.user) {
@@ -44,14 +51,17 @@ export function useAuth() {
 
     // Escutar mudanças de autenticação
     const { data: { subscription } } = supabase!.auth.onAuthStateChange(async (_event, session) => {
-      setSession(session);
-      if (session?.user) {
-        const userProfile = await loadProfile(session.user.id);
-        setProfile(userProfile);
-      } else {
-        setProfile(null);
+      try {
+        setSession(session);
+        if (session?.user) {
+          const userProfile = await loadProfile(session.user.id);
+          setProfile(userProfile);
+        } else {
+          setProfile(null);
+        }
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     return () => subscription.unsubscribe();
