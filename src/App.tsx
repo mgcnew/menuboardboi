@@ -1436,6 +1436,7 @@ function TvMode({ accessCode }: { accessCode: string }) {
               objectFit: imageFitMode as any,
               width: '100%',
               height: '100%',
+              objectPosition: 'center', // Centraliza a imagem e diminui cortes de rostos/produtos
               display: 'block'
             }}
           />

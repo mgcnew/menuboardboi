@@ -112,8 +112,8 @@ export function validateImage(file: File): Promise<void> {
     img.onload = () => {
       URL.revokeObjectURL(url);
       // Suporta landscape (ex: 1280x720), portrait (ex: 720x1280) e quadrado (ex: 1080x1080)
-      if (img.width < 720 || img.height < 720) {
-        reject(new Error(`A imagem ${file.name} possui resolução muito baixa. O mínimo é 720px em ambos os lados.`));
+      if (img.width < 400 || img.height < 400) {
+        reject(new Error(`A imagem ${file.name} possui resolução muito baixa. O mínimo é 400px em ambos os lados.`));
         return;
       }
       resolve();
