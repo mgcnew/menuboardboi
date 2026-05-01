@@ -815,22 +815,18 @@ function ConfigMode() {
                     onChange={(e) => setImageFitModeInput(e.target.value)}
                     disabled={busy}
                   >
-                    <option value="contain">Ajustar à Tela (Mantém proporção)</option>
-                    <option value="cover">Preencher Tela (Corta as bordas)</option>
-                    <option value="fill">Esticar (Distorce a imagem)</option>
+                    <option value="contain">Modo Original (Mostra imagem inteira, pode gerar listras)</option>
+                    <option value="cover">Modo Preenchimento (Sem listras, pode cortar as bordas)</option>
                   </select>
                 </label>
               </div>
 
               <div className="presets-container" style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-4)', flexWrap: 'wrap' }}>
                 <button type="button" className="secondary" onClick={() => handlePreset('10', 'fade', '1.0', 'contain')}>
-                  Manter Proporção (Sem cortes, pode ter listras)
+                  Priorizar Imagem Completa (Sem Cortes)
                 </button>
                 <button type="button" className="secondary" onClick={() => handlePreset('10', 'fade', '1.0', 'cover')}>
-                  Preencher Tela (Corta sobras, sem listras)
-                </button>
-                <button type="button" className="secondary" onClick={() => handlePreset('10', 'fade', '1.0', 'fill')}>
-                  Esticar Exato (Preenche tudo, mas distorce)
+                  Priorizar Tela Cheia (Sem Listras)
                 </button>
                 
                 <button 
@@ -1383,7 +1379,7 @@ function TvMode({ accessCode }: { accessCode: string }) {
       aria-label="Player de Exibição TV"
       data-resolution={`${resolution.width}x${resolution.height}`}
       data-aspect-ratio={(resolution.width / resolution.height).toFixed(2)}
-      style={{ backgroundColor: '#000', margin: 0, padding: 0, width: '100vw', height: '100dvh', position: 'fixed', inset: 0, overflow: 'hidden' }}
+      style={{ backgroundColor: '#000', margin: 0, padding: 0, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, overflow: 'hidden' }}
       onDoubleClick={handleFullscreen}
     >
       <button 
@@ -1419,9 +1415,10 @@ function TvMode({ accessCode }: { accessCode: string }) {
             '--trans-duration': `${transitionType === 'cut' ? 0 : transitionDuration}s`,
             '--photo-duration': `${photoDuration}s`,
             position: 'absolute',
-            inset: 0,
-            width: '100%',
-            height: '100%',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -1436,13 +1433,10 @@ function TvMode({ accessCode }: { accessCode: string }) {
             alt="Propaganda atual"
             draggable={false}
             style={{ 
-              objectFit: imageFitMode as any,
+              objectFit: (imageFitMode === 'fill' ? 'cover' : imageFitMode) as any,
               width: '100%',
               height: '100%',
-              maxWidth: '100%',
-              maxHeight: '100%',
-              display: 'block',
-              margin: 'auto'
+              display: 'block'
             }}
           />
         </div>
