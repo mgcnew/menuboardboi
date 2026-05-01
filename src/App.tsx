@@ -1433,7 +1433,7 @@ function TvMode({ accessCode }: { accessCode: string }) {
             alt="Propaganda atual"
             draggable={false}
             style={{ 
-              objectFit: (imageFitMode === 'fill' ? 'cover' : imageFitMode) as any,
+              objectFit: imageFitMode as any,
               width: '100%',
               height: '100%',
               display: 'block'
