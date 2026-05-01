@@ -823,8 +823,11 @@ function ConfigMode() {
               </div>
 
               <div className="presets-container" style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-4)', flexWrap: 'wrap' }}>
+                <button type="button" className="secondary" onClick={() => handlePreset('10', 'fade', '1.0', 'cover')}>
+                  Full HD Perfeito (Sem listras)
+                </button>
                 <button type="button" className="secondary" onClick={() => handlePreset('10', 'fade', '1.0', 'contain')}>
-                  Monitor Horizontal (16:9)
+                  Monitor Horizontal (Manter proporção)
                 </button>
                 <button type="button" className="secondary" onClick={() => handlePreset('10', 'fade', '1.0', 'cover')}>
                   Monitor Vertical (Em pé)
@@ -1371,6 +1374,7 @@ function TvMode({ accessCode }: { accessCode: string }) {
       aria-label="Player de Exibição TV"
       data-resolution={`${resolution.width}x${resolution.height}`}
       data-aspect-ratio={(resolution.width / resolution.height).toFixed(2)}
+      style={{ backgroundColor: '#000', margin: 0, padding: 0 }}
     >
       {currentImage ? (
         <div 
@@ -1379,7 +1383,14 @@ function TvMode({ accessCode }: { accessCode: string }) {
           style={{
             animationDuration: `${photoDuration + transitionDuration}s`,
             '--trans-duration': `${transitionType === 'cut' ? 0 : transitionDuration}s`,
-            '--photo-duration': `${photoDuration}s`
+            '--photo-duration': `${photoDuration}s`,
+            width: '100vw',
+            height: '100vh',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: 0,
+            padding: 0
           } as React.CSSProperties}
         >
           <img
@@ -1387,7 +1398,12 @@ function TvMode({ accessCode }: { accessCode: string }) {
             src={currentImage.file_url}
             alt="Propaganda atual"
             draggable={false}
-            style={{ objectFit: imageFitMode as any }}
+            style={{ 
+              objectFit: imageFitMode as any,
+              width: '100%',
+              height: '100%',
+              display: 'block'
+            }}
           />
         </div>
       ) : (
