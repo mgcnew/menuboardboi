@@ -1374,7 +1374,7 @@ function TvMode({ accessCode }: { accessCode: string }) {
       aria-label="Player de Exibição TV"
       data-resolution={`${resolution.width}x${resolution.height}`}
       data-aspect-ratio={(resolution.width / resolution.height).toFixed(2)}
-      style={{ backgroundColor: '#000', margin: 0, padding: 0 }}
+      style={{ backgroundColor: '#000', margin: 0, padding: 0, width: '100vw', height: '100vh', position: 'fixed', inset: 0, overflow: 'hidden' }}
     >
       {currentImage ? (
         <div 
@@ -1384,13 +1384,16 @@ function TvMode({ accessCode }: { accessCode: string }) {
             animationDuration: `${photoDuration + transitionDuration}s`,
             '--trans-duration': `${transitionType === 'cut' ? 0 : transitionDuration}s`,
             '--photo-duration': `${photoDuration}s`,
-            width: '100vw',
-            height: '100vh',
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             margin: 0,
-            padding: 0
+            padding: 0,
+            overflow: 'hidden'
           } as React.CSSProperties}
         >
           <img
@@ -1402,7 +1405,10 @@ function TvMode({ accessCode }: { accessCode: string }) {
               objectFit: imageFitMode as any,
               width: '100%',
               height: '100%',
-              display: 'block'
+              maxWidth: '100%',
+              maxHeight: '100%',
+              display: 'block',
+              margin: 'auto'
             }}
           />
         </div>
