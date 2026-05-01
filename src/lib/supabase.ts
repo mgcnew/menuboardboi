@@ -350,6 +350,15 @@ export async function listAllCompaniesForMasterAdmin() {
 export async function getEnterpriseProfile(userId: string) {
   const client = assertSupabase();
   
+  // Tenta sempre buscar do perfil antigo (profiles) primeiro para garantir retrocompatibilidade
+  // Especialmente para master_admins que podem não ter company_id associado
+  let legacyProfile: Profile | null = null;
+  try {
+    legacyProfile = await getProfile(userId);
+  } catch (e) {
+    console.warn('Perfil legado não encontrado ou erro de RLS', e);
+  }
+
   // 1. Busca enterprise_users
   const { data: euData, error: euError } = await client
     .from('enterprise_users')
@@ -358,12 +367,8 @@ export async function getEnterpriseProfile(userId: string) {
     .single();
 
   if (euError) {
-    try {
-      // Fallback para o perfil antigo (se existir)
-      return await getProfile(userId);
-    } catch {
-      throw euError;
-    }
+    if (legacyProfile) return legacyProfile;
+    throw euError;
   }
 
   // 2. Busca user_companies
@@ -373,8 +378,8 @@ export async function getEnterpriseProfile(userId: string) {
     .eq('user_id', euData.id)
     .maybeSingle();
 
-  let roleName: UserRole = 'client';
-  let companyId: string | null = null;
+  let roleName: UserRole = legacyProfile?.role ?? 'client';
+  let companyId: string | null = legacyProfile?.company_id ?? null;
 
   if (ucData) {
     companyId = ucData.company_id;
@@ -395,8 +400,8 @@ export async function getEnterpriseProfile(userId: string) {
     auth_user_id: euData.auth_user_id,
     company_id: companyId,
     role: roleName,
-    full_name: null,
-    avatar_url: null,
+    full_name: legacyProfile?.full_name ?? null,
+    avatar_url: legacyProfile?.avatar_url ?? null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   };
