@@ -28,7 +28,7 @@ export async function listCompanies() {
   const client = assertSupabase();
   const { data, error } = await client
     .from('companies')
-    .select('id, name, access_code, image_duration_seconds, transition_type, transition_duration_seconds, image_fit_mode, created_at')
+    .select('id, name, access_code, image_duration_seconds, transition_type, transition_duration_seconds, image_fit_mode, ticker_text, ticker_active, created_at')
     .order('name');
 
   if (error) {
@@ -72,7 +72,7 @@ export async function getCompanyByCode(code: string) {
   const client = assertSupabase();
   const { data, error } = await client
     .from('companies')
-    .select('id, name, access_code, image_duration_seconds, transition_type, transition_duration_seconds, image_fit_mode, created_at')
+    .select('id, name, access_code, image_duration_seconds, transition_type, transition_duration_seconds, image_fit_mode, ticker_text, ticker_active, created_at')
     .eq('access_code', code)
     .single();
 
@@ -109,6 +109,55 @@ export async function updateCompanyTransition(companyId: string, type: string, d
   if (error) {
     throw error;
   }
+}
+
+export async function updateCompanyTicker(companyId: string, text: string, active: boolean) {
+  const client = assertSupabase();
+  const { error } = await client
+    .from('companies')
+    .update({ 
+      ticker_text: text,
+      ticker_active: active
+    })
+    .eq('id', companyId);
+
+  if (error) {
+    throw error;
+  }
+}
+
+export async function pingHeartbeat(companyId: string, playerId: string | null, playerName: string, currentMediaName: string) {
+  const client = assertSupabase();
+  const payload = {
+    company_id: companyId,
+    player_name: playerName,
+    last_ping_at: new Date().toISOString(),
+    current_media_name: currentMediaName
+  };
+  
+  if (playerId) {
+    const { data, error } = await client.from('players').update(payload).eq('id', playerId).select('id').maybeSingle();
+    if (!error && data) {
+      return data.id;
+    }
+  }
+  
+  // Se não tinha playerId ou o update não retornou nada (talvez foi apagado), inserimos
+  const { data, error } = await client.from('players').insert(payload).select('id').single();
+  if (error) throw error;
+  return data.id;
+}
+
+export async function listPlayers(companyId: string) {
+  const client = assertSupabase();
+  const { data, error } = await client
+    .from('players')
+    .select('*')
+    .eq('company_id', companyId)
+    .order('last_ping_at', { ascending: false });
+
+  if (error) throw error;
+  return data as import('../types').Player[];
 }
 
 export async function listImages(companyId: string) {

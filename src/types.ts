@@ -6,6 +6,17 @@ export type Company = {
   transition_type?: string;
   transition_duration_seconds?: number;
   image_fit_mode?: 'contain' | 'cover';
+  ticker_text?: string;
+  ticker_active?: boolean;
+  created_at: string;
+};
+
+export type Player = {
+  id: string;
+  company_id: string;
+  player_name: string;
+  last_ping_at: string;
+  current_media_name?: string;
   created_at: string;
 };
 

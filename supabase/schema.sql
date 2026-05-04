@@ -7,7 +7,9 @@ create table if not exists public.companies (
   image_duration_seconds integer not null default 10 check (image_duration_seconds >= 1),
   transition_type text not null default 'fade' check (transition_type in ('fade', 'cut', 'wipe-horizontal', 'wipe-vertical')),
   transition_duration_seconds numeric not null default 1.0 check (transition_duration_seconds >= 0.1 and transition_duration_seconds <= 3.0),
-  image_fit_mode text not null default 'contain' check (image_fit_mode in ('contain', 'cover', 'fill')),
+  image_fit_mode text not null default 'cover' check (image_fit_mode in ('contain', 'cover', 'fill')),
+  ticker_text text not null default '',
+  ticker_active boolean not null default false,
   created_at timestamptz not null default timezone('utc'::text, now())
 );
 
@@ -120,6 +122,39 @@ with check (
     where companies.id = voiceovers.company_id
   )
 );
+
+-- Suporte a Letreiro (Ticker)
+alter table public.companies add column if not exists ticker_text text;
+alter table public.companies add column if not exists ticker_active boolean default false;
+
+-- Tabela para rastrear as TVs (Players)
+create table if not exists public.players (
+  id uuid primary key default gen_random_uuid(),
+  company_id uuid not null references public.companies(id) on delete cascade,
+  player_name text not null default 'TV Principal',
+  last_ping_at timestamptz not null default timezone('utc'::text, now()),
+  current_media_name text,
+  created_at timestamptz not null default timezone('utc'::text, now())
+);
+
+create index if not exists players_company_idx on public.players (company_id);
+
+alter table public.players enable row level security;
+
+drop policy if exists "players are viewable by company members and master" on public.players;
+create policy "players are viewable by company members and master"
+on public.players
+for select
+to authenticated
+using (true);
+
+drop policy if exists "players can be inserted/updated anonymously" on public.players;
+create policy "players can be inserted/updated anonymously"
+on public.players
+for all
+to anon, authenticated
+using (true)
+with check (true);
 
 -- Tabelas adicionais para Multi-Tenancy e RBAC (retrocompatíveis)
 create type public.user_role as enum ('client', 'master_admin');

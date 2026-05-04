@@ -15,6 +15,8 @@ import {
   updateCompanyDuration,
   updateCompanyTransition,
   updateImageDays,
+  updateCompanyTicker,
+  listPlayers,
   uploadAudio,
   uploadImages,
   supabase,
@@ -23,7 +25,7 @@ import { compressImageFile, formatBytes, getFileName, validateImage, validateAud
 import { useAudioSettings } from './hooks/useAudioSettings';
 import { useAudioMixer } from './hooks/useAudioMixer';
 import { useActiveImages } from './hooks/useActiveImages';
-import type { AudioAsset, Company, ImageAsset, MediaKind } from './types';
+import type { AudioAsset, Company, ImageAsset, MediaKind, Player } from './types';
 
 const COMPANY_STORAGE_KEY = 'tv-ads-player-company-id';
 
@@ -137,6 +139,9 @@ function ConfigMode() {
   const [transitionTypeInput, setTransitionTypeInput] = useState('fade');
   const [transitionDurationInput, setTransitionDurationInput] = useState('1.0');
   const [imageFitModeInput, setImageFitModeInput] = useState('contain');
+  const [tickerTextInput, setTickerTextInput] = useState('');
+  const [tickerActiveInput, setTickerActiveInput] = useState(false);
+  const [players, setPlayers] = useState<Player[]>([]);
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; message: string; stats?: { original: number; compressed: number } } | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [previewResolution, setPreviewResolution] = useState<'landscape' | 'portrait' | 'square'>('landscape');
@@ -229,12 +234,34 @@ function ConfigMode() {
       setTransitionTypeInput(selectedCompany.transition_type ?? 'fade');
       setTransitionDurationInput(String(selectedCompany.transition_duration_seconds ?? 1.0));
       setImageFitModeInput(selectedCompany.image_fit_mode ?? 'contain');
+      setTickerTextInput(selectedCompany.ticker_text ?? '');
+      setTickerActiveInput(selectedCompany.ticker_active ?? false);
     }
   }, [selectedCompany]);
 
   useEffect(() => {
     void refreshAssets().catch((error: Error) => setFeedback(error.message));
   }, [refreshAssets]);
+
+  // Atualiza a lista de players (heartbeats) da empresa selecionada
+  useEffect(() => {
+    if (!selectedCompanyId || !isSupabaseConfigured) return;
+    const fetchPlayers = async () => {
+      try {
+        const data = await listPlayers(selectedCompanyId);
+        setPlayers(data);
+      } catch (e) {
+        console.error('Erro ao buscar status das TVs', e);
+      }
+    };
+    void fetchPlayers();
+    
+    const intervalId = setInterval(() => {
+      void fetchPlayers();
+    }, 15000); // Atualiza a lista a cada 15 segundos
+    
+    return () => clearInterval(intervalId);
+  }, [selectedCompanyId]);
 
   // Limpa o feedback após 3 segundos
   useEffect(() => {
@@ -429,6 +456,7 @@ function ConfigMode() {
     try {
       await updateCompanyDuration(selectedCompanyId, Number(durationInput));
       await updateCompanyTransition(selectedCompanyId, transitionTypeInput, Number(transitionDurationInput), imageFitModeInput);
+      await updateCompanyTicker(selectedCompanyId, tickerTextInput, tickerActiveInput);
       await refreshCompanies();
       setFeedback('Configurações salvas com sucesso.');
     } catch (error) {
@@ -436,7 +464,7 @@ function ConfigMode() {
     } finally {
       setBusy(false);
     }
-  }, [durationInput, transitionTypeInput, transitionDurationInput, imageFitModeInput, isDurationValid, isTransitionValid, isTotalTimeValid, refreshCompanies, selectedCompanyId]);
+  }, [durationInput, transitionTypeInput, transitionDurationInput, imageFitModeInput, tickerTextInput, tickerActiveInput, isDurationValid, isTransitionValid, isTotalTimeValid, refreshCompanies, selectedCompanyId]);
 
   const handlePreset = useCallback((duration: string, type: string, transDuration: string, fitMode: string = 'contain') => {
     setDurationInput(duration);
@@ -672,6 +700,38 @@ function ConfigMode() {
             ) : null}
 
             {selectedCompany ? (
+              <>
+              <article className="panel" style={{ marginTop: 'var(--space-4)' }}>
+                <header className="section-header">
+                  <div>
+                    <h3>Letreiro / Tarja de Alertas</h3>
+                    <p>Exiba mensagens de texto contínuas no rodapé da TV (ex: promoções, avisos).</p>
+                  </div>
+                </header>
+                <div className="form-grid">
+                  <label className="checkbox-label" style={{ gridColumn: '1 / -1' }}>
+                    <input
+                      type="checkbox"
+                      checked={tickerActiveInput}
+                      onChange={(e) => setTickerActiveInput(e.target.checked)}
+                      disabled={busy}
+                    />
+                    <strong>Ativar Letreiro no Player</strong>
+                  </label>
+                  <label style={{ gridColumn: '1 / -1' }}>
+                    Texto do Letreiro
+                    <input
+                      type="text"
+                      value={tickerTextInput}
+                      onChange={(e) => setTickerTextInput(e.target.value)}
+                      placeholder="Ex: PROMOÇÃO DO DIA: Chopp em dobro até as 20h!"
+                      disabled={busy || !tickerActiveInput}
+                      aria-label="Texto do Letreiro"
+                    />
+                  </label>
+                </div>
+              </article>
+
               <article className="panel" style={{ marginTop: 'var(--space-4)' }}>
                 <header className="section-header">
                   <div>
@@ -759,6 +819,53 @@ function ConfigMode() {
                   </label>
                 </div>
               </article>
+              <article className="panel" style={{ marginTop: 'var(--space-4)' }}>
+                <header className="section-header">
+                  <div>
+                    <h3>Status dos Players (TVs Online)</h3>
+                    <p>Monitore os dispositivos que estão reproduzindo a programação desta empresa.</p>
+                  </div>
+                  <button type="button" className="secondary" onClick={() => {
+                    const fetchPlayers = async () => {
+                      if (!selectedCompanyId) return;
+                      const data = await listPlayers(selectedCompanyId);
+                      setPlayers(data);
+                    };
+                    void fetchPlayers();
+                  }}>
+                    Atualizar Agora
+                  </button>
+                </header>
+                {players.length > 0 ? (
+                  <ul className="asset-list" style={{ marginTop: 'var(--space-4)' }}>
+                    {players.map((player) => {
+                      const lastPing = new Date(player.last_ping_at);
+                      const now = new Date();
+                      const isOnline = (now.getTime() - lastPing.getTime()) < 3 * 60 * 1000; // 3 minutos
+                      
+                      return (
+                        <li key={player.id} className="asset-row" style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem' }}>
+                          <div style={{
+                            width: '12px',
+                            height: '12px',
+                            borderRadius: '50%',
+                            backgroundColor: isOnline ? 'var(--success)' : 'var(--danger)',
+                            flexShrink: 0
+                          }} />
+                          <div className="asset-copy">
+                            <strong>{player.player_name}</strong>
+                            <span>Último sinal: {lastPing.toLocaleString()}</span>
+                            <span>Tocando: {player.current_media_name || 'Desconhecido'}</span>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <EmptyState text="Nenhuma TV conectada detectada nos últimos minutos." />
+                )}
+              </article>
+              </>
             ) : null}
           </section>
         )}
@@ -1387,7 +1494,7 @@ function TvMode({ accessCode }: { accessCode: string }) {
   const transitionType = company?.transition_type ?? 'fade';
   const transitionDuration = company?.transition_duration_seconds ?? 1.0;
   const photoDuration = company?.image_duration_seconds ?? 10;
-  const imageFitMode = company?.image_fit_mode ?? 'contain';
+  const imageFitMode = company?.image_fit_mode ?? 'cover';
 
   const handleFullscreen = () => {
     if (!document.fullscreenElement) {
