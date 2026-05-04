@@ -145,6 +145,7 @@ function ConfigMode() {
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; message: string; stats?: { original: number; compressed: number } } | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [previewResolution, setPreviewResolution] = useState<'landscape' | 'portrait' | 'square'>('landscape');
+  const [currentlyPlayingMusic, setCurrentlyPlayingMusic] = useState<AudioAsset | null>(null);
   
   // Audio Settings
   const { settings: audioSettings, updateSettings: setAudioSettings } = useAudioSettings(selectedCompanyId);
@@ -1146,19 +1147,49 @@ function ConfigMode() {
           className="tab-panel"
           hidden={activeTab !== 'music'}
         >
+          {selectedCompany && currentlyPlayingMusic && (
+            <article className="panel" style={{ marginBottom: 'var(--space-4)', backgroundColor: 'var(--bg-subtle)' }}>
+              <header className="section-header">
+                <div>
+                  <h3>🎵 Preview de Música</h3>
+                  <p>{getFileName(currentlyPlayingMusic.file_url)}</p>
+                </div>
+                <button 
+                  type="button" 
+                  className="secondary" 
+                  onClick={() => setCurrentlyPlayingMusic(null)}
+                  style={{ fontSize: '0.9rem' }}
+                >
+                  Fechar Preview
+                </button>
+              </header>
+              <audio 
+                controls 
+                autoPlay
+                src={currentlyPlayingMusic.file_url} 
+                preload="metadata" 
+                style={{ width: '100%', height: '48px', outline: 'none' }}
+              />
+            </article>
+          )}
+
           <MediaSection
             title="Trilha Sonora"
-            description="Músicas que compõem o ciclo principal de áudio."
+            description="Músicas que compõem o ciclo principal de áudio. Você pode enviar múltiplos arquivos de uma vez."
             accept="audio/*,.mp3,.wav,.mpeg,.m4a"
+            multiple
             onUpload={(files) => void handleUpload(files, 'music')}
             disabled={!selectedCompanyId || busy}
             isUploading={busy}
+            uploadProgress={uploadProgress}
           >
             <AssetList
               items={music}
-              emptyText="Nenhuma música enviada."
+              emptyText="Nenhuma música enviada. Clique em '+ Adicionar' para começar."
               onDelete={(asset) => setItemToDelete({ kind: 'music', asset })}
               busy={busy}
+              onPlay={setCurrentlyPlayingMusic}
+              currentlyPlayingId={currentlyPlayingMusic?.id}
             />
           </MediaSection>
         </section>
@@ -1173,11 +1204,13 @@ function ConfigMode() {
         >
           <MediaSection
             title="Locuções e Avisos"
-            description="Áudios secundários intercalados com a trilha sonora."
+            description="Áudios secundários intercalados com a trilha sonora. Você pode enviar múltiplos arquivos de uma vez."
             accept="audio/*,.mp3,.wav,.mpeg,.m4a"
+            multiple
             onUpload={(files) => void handleUpload(files, 'voiceovers')}
             disabled={!selectedCompanyId || busy}
             isUploading={busy}
+            uploadProgress={uploadProgress}
           >
             <AssetList
               items={voiceovers}
@@ -1339,42 +1372,70 @@ type AssetListProps = {
   emptyText: string;
   busy: boolean;
   onDelete: (asset: AudioAsset) => void;
+  onPlay?: (asset: AudioAsset) => void;
+  currentlyPlayingId?: string;
 };
 
 /**
  * Renderiza uma lista padronizada de itens de áudio (músicas ou locuções).
  */
-function AssetList({ items, emptyText, busy, onDelete }: AssetListProps) {
+function AssetList({ items, emptyText, busy, onDelete, onPlay, currentlyPlayingId }: AssetListProps) {
   return (
     <ul className="asset-list" aria-label="Lista de Áudios">
       {items.map((asset) => {
         const ext = asset.file_url.split('.').pop()?.toUpperCase() || 'AUDIO';
+        const isCurrentlyPlaying = currentlyPlayingId === asset.id;
+        
         return (
-          <li key={asset.id} className="asset-row" style={{ flexWrap: 'wrap' }}>
-            <div className="audio-badge" aria-hidden="true" style={{ fontSize: '0.6rem' }}>{ext.substring(0, 4)}</div>
+          <li 
+            key={asset.id} 
+            className="asset-row" 
+            style={{ 
+              flexWrap: 'wrap', 
+              cursor: onPlay ? 'pointer' : 'default',
+              backgroundColor: isCurrentlyPlaying ? 'rgba(var(--accent-color-rgb), 0.05)' : 'transparent',
+              borderLeft: isCurrentlyPlaying ? '4px solid var(--accent-color)' : 'none',
+              transition: 'all 0.15s ease'
+            }}
+            onClick={() => onPlay && onPlay(asset)}
+          >
+            <div className="audio-badge" aria-hidden="true" style={{ fontSize: '0.6rem' }}>
+              {isCurrentlyPlaying ? '▶' : ext.substring(0, 4)}
+            </div>
             <div className="asset-copy">
-              <strong>{getFileName(asset.file_url)}</strong>
+              <strong style={{ color: isCurrentlyPlaying ? 'var(--accent-color)' : 'inherit' }}>
+                {getFileName(asset.file_url)}
+              </strong>
               <span>Cadastrado em {new Date(asset.created_at).toLocaleDateString('pt-BR')}</span>
             </div>
             <div className="asset-actions">
+              {onPlay && (
+                <button
+                  type="button"
+                  className="secondary"
+                  style={{ fontSize: '0.8rem', marginRight: 'var(--space-2)' }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onPlay(asset);
+                  }}
+                  disabled={busy}
+                  aria-label={`Ouvir prévia de ${getFileName(asset.file_url)}`}
+                >
+                  🔊 Preview
+                </button>
+              )}
               <button
                 type="button"
                 className="danger"
-                onClick={() => onDelete(asset)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(asset);
+                }}
                 disabled={busy}
                 aria-label="Excluir áudio"
               >
                 Excluir
               </button>
-            </div>
-            <div style={{ width: '100%', marginTop: 'var(--space-2)' }}>
-              <audio 
-                controls 
-                src={asset.file_url} 
-                preload="none" 
-                style={{ width: '100%', height: '36px', outline: 'none' }}
-                title={`Preview de ${getFileName(asset.file_url)}`}
-              />
             </div>
           </li>
         );
