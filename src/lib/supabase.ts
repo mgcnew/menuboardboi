@@ -350,21 +350,58 @@ export async function listAllCompaniesForMasterAdmin() {
 export async function getEnterpriseProfile(userId: string) {
   const client = assertSupabase();
   
-  // Tenta sempre buscar do perfil (profiles)
-  const { data, error } = await client
+  let profileData: Profile | null = null;
+  let roleName: UserRole = 'client';
+  let companyId: string | null = null;
+
+  // 1. Tenta buscar da tabela profiles
+  const { data: legacyProfile, error: legacyError } = await client
     .from('profiles')
     .select('*')
     .eq('id', userId)
     .maybeSingle();
 
-  if (error) {
-    console.warn('Erro ao buscar perfil:', error);
-    throw error;
+  if (!legacyError && legacyProfile) {
+    profileData = legacyProfile;
+    roleName = legacyProfile.role as UserRole;
+    companyId = legacyProfile.company_id;
   }
 
-  // Se o perfil não existir (ex: falha na trigger), retorna um perfil padrão temporário
-  if (!data) {
-    console.warn('Perfil não encontrado para o usuário. Usando perfil padrão.');
+  // 2. Tenta buscar das tabelas de enterprise (caso existam no banco do usuário)
+  try {
+    const { data: euData, error: euError } = await client
+      .from('enterprise_users')
+      .select('id, auth_user_id, email')
+      .eq('auth_user_id', userId)
+      .single();
+
+    if (!euError && euData) {
+      const { data: ucData } = await client
+        .from('user_companies')
+        .select('id, company_id, role_id')
+        .eq('user_id', euData.id)
+        .maybeSingle();
+
+      if (ucData) {
+        companyId = ucData.company_id;
+        const { data: roleData } = await client
+          .from('roles')
+          .select('name')
+          .eq('id', ucData.role_id)
+          .single();
+
+        if (roleData) {
+          roleName = roleData.name as UserRole;
+        }
+      }
+    }
+  } catch (e) {
+    // Ignora erro caso as tabelas enterprise não existam
+    console.warn('Aviso: Tabelas enterprise_users não encontradas, usando fallback.');
+  }
+
+  // Se não achou em nenhum lugar, retorna um perfil padrão temporário
+  if (!profileData && roleName === 'client') {
     return {
       id: userId,
       auth_user_id: userId,
@@ -378,13 +415,13 @@ export async function getEnterpriseProfile(userId: string) {
   }
 
   return {
-    id: data.id,
-    auth_user_id: data.id,
-    company_id: data.company_id,
-    role: data.role as UserRole,
-    full_name: data.full_name,
-    avatar_url: data.avatar_url,
-    created_at: data.created_at,
-    updated_at: data.updated_at
+    id: profileData?.id || userId,
+    auth_user_id: userId,
+    company_id: companyId,
+    role: roleName,
+    full_name: profileData?.full_name || null,
+    avatar_url: profileData?.avatar_url || null,
+    created_at: profileData?.created_at || new Date().toISOString(),
+    updated_at: profileData?.updated_at || new Date().toISOString()
   };
 }
