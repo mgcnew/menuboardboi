@@ -1576,6 +1576,10 @@ function TvMode({ accessCode }: { accessCode: string }) {
     }
   };
 
+  // Dados do letreiro
+  const isTickerActive = company?.ticker_active ?? false;
+  const tickerText = company?.ticker_text ?? '';
+
   return (
     <main 
       className="tv-shell" 
@@ -1585,29 +1589,7 @@ function TvMode({ accessCode }: { accessCode: string }) {
       style={{ backgroundColor: '#000', margin: 0, padding: 0, position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, overflow: 'hidden' }}
       onDoubleClick={handleFullscreen}
     >
-      <button 
-        onClick={handleFullscreen}
-        style={{ 
-          position: 'absolute', 
-          bottom: '20px', 
-          right: '20px', 
-          zIndex: 9999, 
-          opacity: 0.3, 
-          background: 'rgba(0,0,0,0.5)', 
-          color: 'white', 
-          border: '1px solid rgba(255,255,255,0.2)', 
-          padding: '8px 12px', 
-          borderRadius: '4px', 
-          cursor: 'pointer',
-          fontSize: '0.8rem',
-          transition: 'opacity 0.2s'
-        }}
-        onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
-        onMouseLeave={(e) => e.currentTarget.style.opacity = '0.3'}
-        title="Dê um duplo-clique em qualquer lugar ou clique aqui para Tela Cheia"
-      >
-        ⛶ Tela Cheia
-      </button>
+
 
       {currentImage ? (
         <div 
@@ -1621,7 +1603,7 @@ function TvMode({ accessCode }: { accessCode: string }) {
             top: 0,
             left: 0,
             right: 0,
-            bottom: 0,
+            bottom: isTickerActive ? '60px' : 0, // Deixa espaço para o letreiro se ativado
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -1639,7 +1621,7 @@ function TvMode({ accessCode }: { accessCode: string }) {
               objectFit: imageFitMode as any,
               width: '100%',
               height: '100%',
-              objectPosition: 'center', // Centraliza a imagem e diminui cortes de rostos/produtos
+              objectPosition: 'center',
               display: 'block'
             }}
           />
@@ -1649,6 +1631,42 @@ function TvMode({ accessCode }: { accessCode: string }) {
           {message || 'Nenhuma imagem cadastrada no momento.'}
         </div>
       )}
+
+      {/* Letreiro / Tarja de Alertas (se ativado) */}
+      {isTickerActive && tickerText && (
+        <div style={{
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: '60px',
+          backgroundColor: 'var(--accent-color, #ff0000)',
+          display: 'flex',
+          alignItems: 'center',
+          overflow: 'hidden',
+          zIndex: 1000
+        }}>
+          <div style={{
+            display: 'inline-block',
+            whiteSpace: 'nowrap',
+            paddingLeft: '100%',
+            animation: 'ticker-scroll 20s linear infinite',
+            color: 'white',
+            fontSize: 'clamp(1.2rem, 3vw, 2rem)',
+            fontWeight: 'bold'
+          }}>
+            {tickerText}
+          </div>
+        </div>
+      )}
+
+      {/* Estilos CSS para a animação do letreiro */}
+      <style>{`
+        @keyframes ticker-scroll {
+          0% { transform: translateX(0); }
+          100% { transform: translateX(-100%); }
+        }
+      `}</style>
     </main>
   );
 }
