@@ -1,4 +1,4 @@
-import { renderHook, waitFor, act } from '@testing-library/react';
+import { renderHook, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AuthProvider, useAuth } from './useAuth';
 import React from 'react';
@@ -32,11 +32,11 @@ describe('useAuth', () => {
     const mockProfile = { id: 'user-1', role: 'client', company_id: 'comp-1' };
 
     // Simulando o retorno da sessão no getSession
-    (supabase.auth.getSession as any).mockResolvedValue({ data: { session: mockSession } });
+    (supabase!.auth.getSession as any).mockResolvedValue({ data: { session: mockSession } });
     
     // Simulando a onAuthStateChange sem novos eventos imediatos
     const unsubscribe = vi.fn();
-    (supabase.auth.onAuthStateChange as any).mockReturnValue({
+    (supabase!.auth.onAuthStateChange as any).mockReturnValue({
       data: { subscription: { unsubscribe } }
     });
 
@@ -68,9 +68,9 @@ describe('useAuth', () => {
     const mockSession = { user: { id: 'admin-1' } };
     const mockProfile = { id: 'admin-1', role: 'master_admin', company_id: null };
 
-    (supabase.auth.getSession as any).mockResolvedValue({ data: { session: mockSession } });
+    (supabase!.auth.getSession as any).mockResolvedValue({ data: { session: mockSession } });
     const unsubscribe = vi.fn();
-    (supabase.auth.onAuthStateChange as any).mockReturnValue({
+    (supabase!.auth.onAuthStateChange as any).mockReturnValue({
       data: { subscription: { unsubscribe } }
     });
     (getEnterpriseProfile as any).mockResolvedValue(mockProfile);

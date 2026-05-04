@@ -145,21 +145,32 @@ function ConfigMode() {
   const { settings: audioSettings, updateSettings: setAudioSettings } = useAudioSettings(selectedCompanyId);
 
   // Tab state - default to 'images' for non-admins
-  const [activeTab, setActiveTab] = useState<TabId>('company');
+  const [activeTab, setActiveTab] = useState<TabId>('images'); // Default inicial seguro
   
   // Update active tab based on auth role
   useEffect(() => {
-    if (!authLoading && !isMasterAdmin && activeTab === 'company') {
-      setActiveTab('images');
+    if (!authLoading && profile) {
+      const isMaster = isMasterAdmin || profile.role === 'master_admin';
+      if (isMaster && companies.length === 0) {
+        // Se for master e não tiver empresa selecionada/criada, volta pra company
+        setActiveTab('company');
+      } else if (!isMaster && activeTab === 'company') {
+        setActiveTab('images');
+      } else if (isMaster && activeTab === 'images' && !selectedCompanyId && companies.length > 0) {
+        setActiveTab('company');
+      }
     }
-  }, [authLoading, isMasterAdmin, activeTab]);
+  }, [authLoading, isMasterAdmin, profile, activeTab, companies.length, selectedCompanyId]);
 
   // Force selected company to profile company if not master admin
   useEffect(() => {
-    if (!isMasterAdmin && profile?.company_id) {
-      setSelectedCompanyId(profile.company_id);
+    if (!authLoading && profile) {
+      const isMaster = isMasterAdmin || profile.role === 'master_admin';
+      if (!isMaster && profile.company_id) {
+        setSelectedCompanyId(profile.company_id);
+      }
     }
-  }, [isMasterAdmin, profile]);
+  }, [authLoading, isMasterAdmin, profile]);
 
   // Delete confirmation state
   const [itemToDelete, setItemToDelete] = useState<{ kind: 'images' | MediaKind; asset: ImageAsset | AudioAsset } | null>(null);
@@ -499,8 +510,8 @@ function ConfigMode() {
       ) : null}
 
       <nav className="breadcrumb" aria-label="Breadcrumb">
-        <span>Painel {isMasterAdmin ? 'Master' : 'da Empresa'}</span> / 
-        <span>{selectedCompany ? selectedCompany.name : (isMasterAdmin ? 'Selecionar Empresa' : 'Carregando...')}</span> / 
+        <span>Painel {(isMasterAdmin || profile?.role === 'master_admin') ? 'Master' : 'da Empresa'}</span> / 
+        <span>{selectedCompany ? selectedCompany.name : ((isMasterAdmin || profile?.role === 'master_admin') ? 'Selecionar Empresa' : 'Carregando...')}</span> / 
         <span>
           {activeTab === 'company' && ' Configurações'}
           {activeTab === 'images' && ' Fotos Promocionais'}
@@ -510,7 +521,7 @@ function ConfigMode() {
       </nav>
 
       <div role="tablist" className="tabs-list" aria-label="Navegação Principal">
-        {isMasterAdmin && (
+        {(isMasterAdmin || profile?.role === 'master_admin') && (
           <button
             role="tab"
             className="tab-button"
@@ -529,7 +540,7 @@ function ConfigMode() {
           aria-controls="panel-images"
           id="tab-images"
           onClick={() => setActiveTab('images')}
-          disabled={!selectedCompanyId}
+          disabled={(isMasterAdmin || profile?.role === 'master_admin') && !selectedCompanyId}
         >
           Fotos
         </button>
@@ -540,7 +551,7 @@ function ConfigMode() {
           aria-controls="panel-music"
           id="tab-music"
           onClick={() => setActiveTab('music')}
-          disabled={!selectedCompanyId}
+          disabled={(isMasterAdmin || profile?.role === 'master_admin') && !selectedCompanyId}
         >
           Músicas
         </button>
@@ -551,7 +562,7 @@ function ConfigMode() {
           aria-controls="panel-voiceovers"
           id="tab-voiceovers"
           onClick={() => setActiveTab('voiceovers')}
-          disabled={!selectedCompanyId}
+          disabled={(isMasterAdmin || profile?.role === 'master_admin') && !selectedCompanyId}
         >
           Locuções
         </button>
@@ -559,7 +570,7 @@ function ConfigMode() {
 
       <main>
         {/* Aba: Configurações da Empresa */}
-        {isMasterAdmin && (
+        {(isMasterAdmin || profile?.role === 'master_admin') && (
           <section
             id="panel-company"
             role="tabpanel"
