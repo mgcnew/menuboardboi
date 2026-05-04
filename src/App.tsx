@@ -122,7 +122,7 @@ function ConfigModeWrapper() {
  * Modo Configuração: Interface principal administrativa.
  * Design acessível, semântico e com alta legibilidade (WCAG 2.1).
  */
-type TabId = 'company' | 'images' | 'music' | 'voiceovers';
+type TabId = 'company' | 'media' | 'images' | 'music' | 'voiceovers';
 
 function ConfigMode() {
   const { profile, isMasterAdmin, loading: authLoading, signOut } = useAuth();
@@ -541,7 +541,8 @@ function ConfigMode() {
         <span>Painel {(isMasterAdmin || profile?.role === 'master_admin') ? 'Master' : 'da Empresa'}</span> / 
         <span>{selectedCompany ? selectedCompany.name : ((isMasterAdmin || profile?.role === 'master_admin') ? 'Selecionar Empresa' : 'Carregando...')}</span> / 
         <span>
-          {activeTab === 'company' && ' Configurações'}
+          {activeTab === 'company' && ' Empresa'}
+          {activeTab === 'media' && ' Configurações de Mídia'}
           {activeTab === 'images' && ' Fotos Promocionais'}
           {activeTab === 'music' && ' Trilha Sonora'}
           {activeTab === 'voiceovers' && ' Locuções'}
@@ -561,6 +562,17 @@ function ConfigMode() {
             Empresa
           </button>
         )}
+        <button
+          role="tab"
+          className="tab-button"
+          aria-selected={activeTab === 'media'}
+          aria-controls="panel-media"
+          id="tab-media"
+          onClick={() => setActiveTab('media')}
+          disabled={(isMasterAdmin || profile?.role === 'master_admin') && !selectedCompanyId}
+        >
+          Configurações de Mídia
+        </button>
         <button
           role="tab"
           className="tab-button"
@@ -597,7 +609,7 @@ function ConfigMode() {
       </div>
 
       <main>
-        {/* Aba: Configurações da Empresa */}
+        {/* Aba: Empresa (apenas master admin) */}
         {(isMasterAdmin || profile?.role === 'master_admin') && (
           <section
             id="panel-company"
@@ -608,8 +620,8 @@ function ConfigMode() {
           >
             <header className="section-header">
               <div>
-                <h2>Configurações da Empresa</h2>
-                <p>Gerencie o tenant ativo e configurações globais de exibição.</p>
+                <h2>Empresas</h2>
+                <p>Gerencie os tenants e veja os códigos de acesso e URLs.</p>
               </div>
               {loading ? <span className="tag" aria-live="polite">Carregando...</span> : null}
             </header>
@@ -655,27 +667,7 @@ function ConfigMode() {
             </div>
 
             {selectedCompany ? (
-              <div className="form-grid compact">
-                <label>
-                  Duração de cada imagem (segundos)
-                  <div className="inline-group">
-                    <input
-                      type="number"
-                      min="3"
-                      value={durationInput}
-                      onChange={(event) => setDurationInput(event.target.value)}
-                      disabled={busy}
-                      aria-label="Segundos de exibição por imagem"
-                      aria-invalid={!isDurationValid}
-                    />
-                    <button type="button" onClick={() => void handleSaveDuration()} disabled={busy || !isDurationValid}>
-                      Salvar
-                    </button>
-                  </div>
-                  {!isDurationValid && (
-                    <span style={{ color: 'var(--text-danger)', fontSize: '0.8rem' }}>Mínimo de 3 segundos.</span>
-                  )}
-                </label>
+              <div className="form-grid compact" style={{ marginTop: 'var(--space-4)' }}>
                 <label>
                   Código de Acesso TV
                   <input
@@ -700,12 +692,223 @@ function ConfigMode() {
             ) : null}
 
             {selectedCompany ? (
-              <>
               <article className="panel" style={{ marginTop: 'var(--space-4)' }}>
                 <header className="section-header">
                   <div>
+                    <h3>Status dos Players (TVs Online)</h3>
+                    <p>Monitore os dispositivos que estão reproduzindo a programação desta empresa.</p>
+                  </div>
+                  <button type="button" className="secondary" onClick={() => {
+                    const fetchPlayers = async () => {
+                      if (!selectedCompanyId) return;
+                      const data = await listPlayers(selectedCompanyId);
+                      setPlayers(data);
+                    };
+                    void fetchPlayers();
+                  }}>
+                    Atualizar Agora
+                  </button>
+                </header>
+                {players.length > 0 ? (
+                  <ul className="asset-list" style={{ marginTop: 'var(--space-4)' }}>
+                    {players.map((player) => {
+                      const lastPing = new Date(player.last_ping_at);
+                      const now = new Date();
+                      const isOnline = (now.getTime() - lastPing.getTime()) < 3 * 60 * 1000;
+                      
+                      return (
+                        <li key={player.id} className="asset-row" style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem' }}>
+                          <div style={{
+                            width: '12px',
+                            height: '12px',
+                            borderRadius: '50%',
+                            backgroundColor: isOnline ? 'var(--success)' : 'var(--danger)',
+                            flexShrink: 0
+                          }} />
+                          <div className="asset-copy">
+                            <strong>{player.player_name}</strong>
+                            <span>Último sinal: {lastPing.toLocaleString()}</span>
+                            <span>Tocando: {player.current_media_name || 'Desconhecido'}</span>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : (
+                  <EmptyState text="Nenhuma TV conectada detectada nos últimos minutos." />
+                )}
+              </article>
+            ) : null}
+          </section>
+        )}
+
+        {/* Aba: Configurações de Mídia (nova!) */}
+        <section
+          id="panel-media"
+          role="tabpanel"
+          aria-labelledby="tab-media"
+          className="tab-panel"
+          hidden={activeTab !== 'media'}
+        >
+          {selectedCompany ? (
+            <>
+              {/* Seção: Configurações de Imagem */}
+              <article className="panel" style={{ marginBottom: 'var(--space-4)' }}>
+                <header className="section-header">
+                  <div>
+                    <h3>Configurações de Imagem</h3>
+                    <p>Ajuste o tempo de exibição, efeitos e modo de exibição das fotos.</p>
+                  </div>
+                </header>
+
+                <div className="form-grid">
+                  <label>
+                    Duração da Foto (segundos)
+                    <input
+                      type="number"
+                      min="1"
+                      max="30"
+                      step="0.5"
+                      value={durationInput}
+                      onChange={(e) => setDurationInput(e.target.value)}
+                      disabled={busy}
+                    />
+                  </label>
+
+                  <label>
+                    Tipo de Transição
+                    <select
+                      value={transitionTypeInput}
+                      onChange={(e) => setTransitionTypeInput(e.target.value)}
+                      disabled={busy}
+                    >
+                      <option value="fade">Fade (Dissolvência)</option>
+                      <option value="cut">Cut (Corte Direto)</option>
+                      <option value="wipe-horizontal">Wipe Horizontal</option>
+                      <option value="wipe-vertical">Wipe Vertical</option>
+                    </select>
+                  </label>
+
+                  <label>
+                    Tempo da Transição (segundos)
+                    <input
+                      type="number"
+                      min="0.1"
+                      max="3"
+                      step="0.1"
+                      value={transitionDurationInput}
+                      onChange={(e) => setTransitionDurationInput(e.target.value)}
+                      disabled={busy || transitionTypeInput === 'cut'}
+                    />
+                  </label>
+                  <label>
+                    Modo de Exibição
+                    <select
+                      value={imageFitModeInput}
+                      onChange={(e) => setImageFitModeInput(e.target.value)}
+                      disabled={busy}
+                    >
+                      <option value="contain">Modo Original (Mostra imagem inteira)</option>
+                      <option value="cover">Modo Preenchimento (Sem listras)</option>
+                    </select>
+                  </label>
+                </div>
+
+                <div className="presets-container" style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-4)', flexWrap: 'wrap' }}>
+                  <button type="button" className="secondary" onClick={() => handlePreset('10', 'fade', '1.0', 'contain')}>
+                    Priorizar Imagem Completa
+                  </button>
+                  <button type="button" className="secondary" onClick={() => handlePreset('10', 'fade', '1.0', 'cover')}>
+                    Priorizar Tela Cheia
+                  </button>
+                </div>
+
+                {!isTotalTimeValid && (
+                  <div style={{ color: 'var(--text-danger)', fontSize: '0.85rem', marginTop: 'var(--space-2)' }}>
+                    O tempo total (foto + transição) deve ser de pelo menos 1.5 segundos.
+                  </div>
+                )}
+                
+                {/* Live Preview Box */}
+                <div className="live-preview-box" style={{ marginTop: 'var(--space-4)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+                  <div style={{ padding: 'var(--space-2) var(--space-3)', background: 'var(--bg-subtle)', borderBottom: '1px solid var(--border-default)', fontSize: '0.85rem', fontWeight: 500, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>Preview ao Vivo</span>
+                    <select 
+                      value={previewResolution} 
+                      onChange={(e) => setPreviewResolution(e.target.value as any)}
+                      style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem', width: 'auto' }}
+                    >
+                      <option value="landscape">Paisagem (1920x1080)</option>
+                      <option value="portrait">Retrato (1080x1920)</option>
+                      <option value="square">Quadrado (1080x1080)</option>
+                    </select>
+                  </div>
+                  <div style={{ 
+                    position: 'relative', 
+                    background: '#000', 
+                    overflow: 'hidden',
+                    margin: '0 auto',
+                    height: '300px',
+                    width: previewResolution === 'landscape' ? '100%' : previewResolution === 'portrait' ? '168px' : '300px',
+                    transition: 'width 0.3s ease'
+                  }}>
+                  {images.length > 0 ? (
+                    <>
+                      <div 
+                        className="preview-slide"
+                        style={{
+                          position: 'absolute',
+                          inset: 0,
+                          animation: `preview-${transitionTypeInput} ${Number(durationInput) + Number(transitionDurationInput)}s infinite`,
+                          animationDuration: `${Number(durationInput) + Number(transitionDurationInput)}s`,
+                          '--trans-duration': `${transitionTypeInput === 'cut' ? 0 : transitionDurationInput}s`,
+                          '--photo-duration': `${durationInput}s`
+                        } as React.CSSProperties}
+                      >
+                        <img src={images[0].file_url} style={{ width: '100%', height: '100%', objectFit: imageFitModeInput as any }} alt="" />
+                      </div>
+                      {images.length > 1 && (
+                        <div 
+                          className="preview-slide"
+                          style={{
+                            position: 'absolute',
+                            inset: 0,
+                            animation: `preview-${transitionTypeInput}-alt ${Number(durationInput) + Number(transitionDurationInput)}s infinite`,
+                            animationDuration: `${Number(durationInput) + Number(transitionDurationInput)}s`,
+                            '--trans-duration': `${transitionTypeInput === 'cut' ? 0 : transitionDurationInput}s`,
+                            '--photo-duration': `${durationInput}s`
+                          } as React.CSSProperties}
+                        >
+                          <img src={images[1].file_url} style={{ width: '100%', height: '100%', objectFit: imageFitModeInput as any }} alt="" />
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#fff' }}>
+                      Adicione fotos para visualizar
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Botão Salvar Configurações */}
+              <div style={{ marginTop: 'var(--space-4)', display: 'flex', justifyContent: 'flex-end' }}>
+                <button 
+                  type="button" 
+                  onClick={() => void handleSaveDuration()} 
+                  disabled={busy || !isDurationValid || !isTransitionValid || !isTotalTimeValid}
+                >
+                  Salvar Configurações
+                </button>
+              </div>
+              </article>
+
+              {/* Seção: Letreiro */}
+              <article className="panel" style={{ marginBottom: 'var(--space-4)' }}>
+                <header className="section-header">
+                  <div>
                     <h3>Letreiro / Tarja de Alertas</h3>
-                    <p>Exiba mensagens de texto contínuas no rodapé da TV (ex: promoções, avisos).</p>
+                    <p>Exiba mensagens de texto contínuas no rodapé da TV.</p>
                   </div>
                 </header>
                 <div className="form-grid">
@@ -732,11 +935,12 @@ function ConfigMode() {
                 </div>
               </article>
 
-              <article className="panel" style={{ marginTop: 'var(--space-4)' }}>
+              {/* Seção: Mixagem de Áudio */}
+              <article className="panel">
                 <header className="section-header">
                   <div>
                     <h3>Mixagem de Áudio</h3>
-                    <p>Ajuste o volume base, os níveis de redução (ducking) e o intervalo das locuções.</p>
+                    <p>Ajuste o volume base, ducking e intervalo das locuções.</p>
                   </div>
                 </header>
                 <div className="form-grid">
@@ -819,58 +1023,11 @@ function ConfigMode() {
                   </label>
                 </div>
               </article>
-              <article className="panel" style={{ marginTop: 'var(--space-4)' }}>
-                <header className="section-header">
-                  <div>
-                    <h3>Status dos Players (TVs Online)</h3>
-                    <p>Monitore os dispositivos que estão reproduzindo a programação desta empresa.</p>
-                  </div>
-                  <button type="button" className="secondary" onClick={() => {
-                    const fetchPlayers = async () => {
-                      if (!selectedCompanyId) return;
-                      const data = await listPlayers(selectedCompanyId);
-                      setPlayers(data);
-                    };
-                    void fetchPlayers();
-                  }}>
-                    Atualizar Agora
-                  </button>
-                </header>
-                {players.length > 0 ? (
-                  <ul className="asset-list" style={{ marginTop: 'var(--space-4)' }}>
-                    {players.map((player) => {
-                      const lastPing = new Date(player.last_ping_at);
-                      const now = new Date();
-                      const isOnline = (now.getTime() - lastPing.getTime()) < 3 * 60 * 1000; // 3 minutos
-                      
-                      return (
-                        <li key={player.id} className="asset-row" style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem' }}>
-                          <div style={{
-                            width: '12px',
-                            height: '12px',
-                            borderRadius: '50%',
-                            backgroundColor: isOnline ? 'var(--success)' : 'var(--danger)',
-                            flexShrink: 0
-                          }} />
-                          <div className="asset-copy">
-                            <strong>{player.player_name}</strong>
-                            <span>Último sinal: {lastPing.toLocaleString()}</span>
-                            <span>Tocando: {player.current_media_name || 'Desconhecido'}</span>
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                ) : (
-                  <EmptyState text="Nenhuma TV conectada detectada nos últimos minutos." />
-                )}
-              </article>
-              </>
-            ) : null}
-          </section>
-        )}
+            </>
+          ) : null}
+        </section>
 
-        {/* Aba: Fotos */}
+        {/* Aba: Fotos (agora só gerenciamento, sem configurações) */}
         <section
           id="panel-images"
           role="tabpanel"
@@ -878,156 +1035,6 @@ function ConfigMode() {
           className="tab-panel"
           hidden={activeTab !== 'images'}
         >
-          {selectedCompany ? (
-            <article className="panel" style={{ marginBottom: 'var(--space-4)' }}>
-              <header className="section-header">
-                <div>
-                  <h3>Configurações de Transição</h3>
-                  <p>Ajuste o tempo de exibição e os efeitos visuais entre as fotos.</p>
-                </div>
-              </header>
-
-              <div className="form-grid">
-                <label>
-                  Duração da Foto (segundos)
-                  <input
-                    type="number"
-                    min="1"
-                    max="30"
-                    step="0.5"
-                    value={durationInput}
-                    onChange={(e) => setDurationInput(e.target.value)}
-                    disabled={busy}
-                  />
-                </label>
-
-                <label>
-                  Tipo de Transição
-                  <select
-                    value={transitionTypeInput}
-                    onChange={(e) => setTransitionTypeInput(e.target.value)}
-                    disabled={busy}
-                  >
-                    <option value="fade">Fade (Dissolvência)</option>
-                    <option value="cut">Cut (Corte Direto)</option>
-                    <option value="wipe-horizontal">Wipe Horizontal</option>
-                    <option value="wipe-vertical">Wipe Vertical</option>
-                  </select>
-                </label>
-
-                <label>
-                  Tempo da Transição (segundos)
-                  <input
-                    type="number"
-                    min="0.1"
-                    max="3"
-                    step="0.1"
-                    value={transitionDurationInput}
-                    onChange={(e) => setTransitionDurationInput(e.target.value)}
-                    disabled={busy || transitionTypeInput === 'cut'}
-                  />
-                </label>
-                <label>
-                  Modo de Exibição
-                  <select
-                    value={imageFitModeInput}
-                    onChange={(e) => setImageFitModeInput(e.target.value)}
-                    disabled={busy}
-                  >
-                    <option value="contain">Modo Original (Mostra imagem inteira, pode gerar listras)</option>
-                    <option value="cover">Modo Preenchimento (Sem listras, pode cortar as bordas)</option>
-                  </select>
-                </label>
-              </div>
-
-              <div className="presets-container" style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-4)', flexWrap: 'wrap' }}>
-                <button type="button" className="secondary" onClick={() => handlePreset('10', 'fade', '1.0', 'contain')}>
-                  Priorizar Imagem Completa (Sem Cortes)
-                </button>
-                <button type="button" className="secondary" onClick={() => handlePreset('10', 'fade', '1.0', 'cover')}>
-                  Priorizar Tela Cheia (Sem Listras)
-                </button>
-                
-                <button 
-                  type="button" 
-                  onClick={() => void handleSaveDuration()} 
-                  disabled={busy || !isDurationValid || !isTransitionValid || !isTotalTimeValid}
-                  style={{ marginLeft: 'auto' }}
-                >
-                  Salvar Configurações
-                </button>
-              </div>
-
-              {!isTotalTimeValid && (
-                <div style={{ color: 'var(--text-danger)', fontSize: '0.85rem', marginTop: 'var(--space-2)' }}>
-                  O tempo total (foto + transição) deve ser de pelo menos 1.5 segundos.
-                </div>
-              )}
-              
-              {/* Live Preview Box */}
-              <div className="live-preview-box" style={{ marginTop: 'var(--space-4)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
-                <div style={{ padding: 'var(--space-2) var(--space-3)', background: 'var(--bg-subtle)', borderBottom: '1px solid var(--border-default)', fontSize: '0.85rem', fontWeight: 500, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>Preview ao Vivo</span>
-                  <select 
-                    value={previewResolution} 
-                    onChange={(e) => setPreviewResolution(e.target.value as any)}
-                    style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem', width: 'auto' }}
-                  >
-                    <option value="landscape">Paisagem (Ex: 1920x1080)</option>
-                    <option value="portrait">Retrato (Ex: 1080x1920)</option>
-                    <option value="square">Quadrado (Ex: 1080x1080)</option>
-                  </select>
-                </div>
-                <div style={{ 
-                  position: 'relative', 
-                  background: '#000', 
-                  overflow: 'hidden',
-                  margin: '0 auto',
-                  height: '300px',
-                  width: previewResolution === 'landscape' ? '100%' : previewResolution === 'portrait' ? '168px' : '300px',
-                  transition: 'width 0.3s ease'
-                }}>
-                  {images.length > 0 ? (
-                    <>
-                      <div 
-                        className="preview-slide"
-                        style={{
-                          position: 'absolute',
-                          inset: 0,
-                          animation: `preview-${transitionTypeInput} ${Number(durationInput) + Number(transitionDurationInput)}s infinite`,
-                          animationDuration: `${Number(durationInput) + Number(transitionDurationInput)}s`,
-                          '--trans-duration': `${transitionTypeInput === 'cut' ? 0 : transitionDurationInput}s`,
-                          '--photo-duration': `${durationInput}s`
-                        } as React.CSSProperties}
-                      >
-                        <img src={images[0].file_url} style={{ width: '100%', height: '100%', objectFit: imageFitModeInput as any }} alt="" />
-                      </div>
-                      {images.length > 1 && (
-                        <div 
-                          className="preview-slide"
-                          style={{
-                            position: 'absolute',
-                            inset: 0,
-                            animation: `preview-${transitionTypeInput}-alt ${Number(durationInput) + Number(transitionDurationInput)}s infinite`,
-                            animationDuration: `${Number(durationInput) + Number(transitionDurationInput)}s`,
-                            '--trans-duration': `${transitionTypeInput === 'cut' ? 0 : transitionDurationInput}s`,
-                            '--photo-duration': `${durationInput}s`
-                          } as React.CSSProperties}
-                        >
-                          <img src={images[1].file_url} style={{ width: '100%', height: '100%', objectFit: imageFitModeInput as any }} alt="" />
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#fff' }}>
-                      Adicione fotos para visualizar
-                    </div>
-                  )}
-                </div>
-              </div>
-            </article>
-          ) : null}
-
           <MediaSection
             title="Fotos Promocionais"
             description="Arquivos de imagem exibidos em sequência. Ordene conforme desejado."
