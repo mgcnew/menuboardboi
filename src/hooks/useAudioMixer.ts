@@ -10,6 +10,7 @@ export function useAudioMixer(music: AudioAsset[], voiceovers: AudioAsset[], set
   const voiceQueueRef = useRef<AudioAsset[]>([]);
   const volumeFadeIntervalRef = useRef<number | null>(null);
   const voiceoverTickerRef = useRef<number | null>(null);
+  const startVoiceoverRef = useRef<() => void>(() => {});
   const elapsedMusicMsRef = useRef(0);
   const isVoiceoverPlayingRef = useRef(false);
   
@@ -58,13 +59,14 @@ export function useAudioMixer(music: AudioAsset[], voiceovers: AudioAsset[], set
     voiceoverTickerRef.current = window.setInterval(() => {
       if (!isMusicPlayingRef.current || isVoiceoverPlayingRef.current) return;
 
+      const intervalMs = Math.max(1, settings.voiceoverIntervalMinutes) * 60 * 1000;
       elapsedMusicMsRef.current += 1000;
-      if (elapsedMusicMsRef.current < 120000) return;
+      if (elapsedMusicMsRef.current < intervalMs) return;
 
       elapsedMusicMsRef.current = 0;
-      void startVoiceover();
+      startVoiceoverRef.current();
     }, 1000);
-  }, []);
+  }, [settings.voiceoverIntervalMinutes]);
 
   const stopVoiceoverTicker = useCallback(() => {
     if (voiceoverTickerRef.current !== null) {
@@ -197,6 +199,12 @@ export function useAudioMixer(music: AudioAsset[], voiceovers: AudioAsset[], set
     settings.duckingFadeInTime,
     fadeMusicVolume
   ]);
+
+  useEffect(() => {
+    startVoiceoverRef.current = () => {
+      void startVoiceover();
+    };
+  }, [startVoiceover]);
 
   // Efeito de inicialização estrita: Começa o ciclo (Música)
   useEffect(() => {

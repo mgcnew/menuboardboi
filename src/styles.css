@@ -806,6 +806,21 @@ button.danger:hover {
   margin-left: auto;
 }
 
+.audio-preview-panel audio {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.audio-preview-panel label {
+  min-width: 0;
+}
+
+.audio-preview-panel .form-grid {
+  grid-template-columns: 1fr;
+}
+
 /* 16:9 Image Grid */
 .image-grid {
   display: grid;
@@ -1154,5 +1169,21 @@ button.danger:hover {
   .image-grid {
     grid-template-columns: 1fr;
     gap: var(--space-3);
+  }
+
+  .audio-preview-header {
+    margin-bottom: var(--space-2);
+  }
+
+  .audio-preview-actions {
+    justify-content: stretch;
+  }
+
+  .audio-preview-run-btn {
+    width: 100%;
+  }
+
+  .audio-preview-panel {
+    overflow: hidden;
   }
 }

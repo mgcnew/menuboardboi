@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useAuth } from './hooks/useAuth';
 import { Login, WhatsAppTab } from './components';
@@ -155,6 +155,11 @@ function ConfigMode() {
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [previewResolution, setPreviewResolution] = useState<'landscape' | 'portrait' | 'square'>('landscape');
   const [currentlyPlayingMusic, setCurrentlyPlayingMusic] = useState<AudioAsset | null>(null);
+  const [previewMusicId, setPreviewMusicId] = useState('');
+  const [previewVoiceId, setPreviewVoiceId] = useState('');
+  const previewMusicRef = useRef<HTMLAudioElement | null>(null);
+  const previewVoiceRef = useRef<HTMLAudioElement | null>(null);
+  const previewFadeIntervalRef = useRef<number | null>(null);
   // WhatsApp Credentials State
   const [_whatsappCredentials, setWhatsappCredentials] = useState<WhatsAppCredentials | null>(null);
   const [waApiKey, setWaApiKey] = useState('');
@@ -320,6 +325,39 @@ function ConfigMode() {
       return () => clearTimeout(timer);
     }
   }, [feedback]);
+
+  useEffect(() => {
+    if (music.length === 0) {
+      setPreviewMusicId('');
+      return;
+    }
+
+    const hasValidSelection = music.some((item) => item.id === previewMusicId);
+    if (!hasValidSelection) {
+      setPreviewMusicId(music[0].id);
+    }
+  }, [music, previewMusicId]);
+
+  useEffect(() => {
+    if (voiceovers.length === 0) {
+      setPreviewVoiceId('');
+      return;
+    }
+
+    const hasValidSelection = voiceovers.some((item) => item.id === previewVoiceId);
+    if (!hasValidSelection) {
+      setPreviewVoiceId(voiceovers[0].id);
+    }
+  }, [voiceovers, previewVoiceId]);
+
+  useEffect(() => {
+    if (previewMusicRef.current) {
+      previewMusicRef.current.volume = audioSettings.musicBaseVolume;
+    }
+    if (previewVoiceRef.current) {
+      previewVoiceRef.current.volume = audioSettings.voiceoverVolume;
+    }
+  }, [audioSettings.musicBaseVolume, audioSettings.voiceoverVolume]);
 
   useEffect(() => {
     setIsMobileMenuOpen(false);
@@ -561,6 +599,84 @@ function ConfigMode() {
       setPreviewImage(images[previewImageIndex + 1].file_url);
     }
   }, [images, previewImageIndex]);
+
+  const clearPreviewFade = useCallback(() => {
+    if (previewFadeIntervalRef.current !== null) {
+      window.clearInterval(previewFadeIntervalRef.current);
+      previewFadeIntervalRef.current = null;
+    }
+  }, []);
+
+  const fadePreviewMusicTo = useCallback((targetVolume: number, durationSeconds: number) => {
+    const player = previewMusicRef.current;
+    if (!player) return;
+
+    clearPreviewFade();
+
+    if (durationSeconds <= 0) {
+      player.volume = targetVolume;
+      return;
+    }
+
+    const startVolume = player.volume;
+    const stepMs = 50;
+    const totalSteps = Math.max(1, Math.ceil((durationSeconds * 1000) / stepMs));
+    let step = 0;
+
+    previewFadeIntervalRef.current = window.setInterval(() => {
+      step += 1;
+      const progress = Math.min(step / totalSteps, 1);
+      player.volume = startVolume + (targetVolume - startVolume) * progress;
+      if (progress >= 1) {
+        clearPreviewFade();
+      }
+    }, stepMs);
+  }, [clearPreviewFade]);
+
+  const handleRunDuckingPreview = useCallback(async () => {
+    const musicPlayer = previewMusicRef.current;
+    const voicePlayer = previewVoiceRef.current;
+    if (!musicPlayer || !voicePlayer) return;
+
+    try {
+      voicePlayer.currentTime = 0;
+      musicPlayer.volume = audioSettings.musicBaseVolume;
+
+      if (musicPlayer.paused) {
+        await musicPlayer.play();
+      }
+
+      fadePreviewMusicTo(audioSettings.musicDuckedVolume, audioSettings.duckingFadeOutTime);
+      await voicePlayer.play();
+    } catch (err) {
+      console.error('Falha no preview de ducking:', err);
+    }
+  }, [
+    audioSettings.musicBaseVolume,
+    audioSettings.musicDuckedVolume,
+    audioSettings.duckingFadeOutTime,
+    fadePreviewMusicTo
+  ]);
+
+  useEffect(() => {
+    const voicePlayer = previewVoiceRef.current;
+    if (!voicePlayer) return;
+
+    const onVoiceEnded = () => {
+      fadePreviewMusicTo(audioSettings.musicBaseVolume, audioSettings.duckingFadeInTime);
+    };
+
+    voicePlayer.addEventListener('ended', onVoiceEnded);
+    return () => {
+      voicePlayer.removeEventListener('ended', onVoiceEnded);
+    };
+  }, [audioSettings.musicBaseVolume, audioSettings.duckingFadeInTime, fadePreviewMusicTo]);
+
+  useEffect(() => {
+    return () => {
+      clearPreviewFade();
+    };
+  }, [clearPreviewFade]);
 
   const handlePrevPreview = useCallback((e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -1281,6 +1397,81 @@ function ConfigMode() {
                       onChange={(e) => setAudioSettings({ voiceoverIntervalMinutes: Number(e.target.value) })}
                     />
                   </label>
+                </div>
+
+                <div className="panel audio-preview-panel" style={{ marginTop: 'var(--space-4)', background: 'var(--bg-subtle)' }}>
+                  <header className="section-header audio-preview-header" style={{ marginBottom: 'var(--space-3)' }}>
+                    <div>
+                      <h4 style={{ margin: 0 }}>Preview da Mixagem (tempo real)</h4>
+                      <p>Teste música + locução e ajuste os sliders ouvindo o resultado na hora.</p>
+                    </div>
+                  </header>
+
+                  <div className="form-grid">
+                    <label>
+                      Música para preview
+                      <select
+                        value={previewMusicId}
+                        onChange={(e) => setPreviewMusicId(e.target.value)}
+                        disabled={music.length === 0}
+                      >
+                        {music.length === 0 ? (
+                          <option value="">Nenhuma música disponível</option>
+                        ) : (
+                          music.map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {getAudioDisplayName(item.file_url)}
+                            </option>
+                          ))
+                        )}
+                      </select>
+                      <audio
+                        ref={previewMusicRef}
+                        controls
+                        loop
+                        preload="metadata"
+                        src={music.find((m) => m.id === previewMusicId)?.file_url}
+                        style={{ width: '100%' }}
+                      />
+                    </label>
+
+                    <label>
+                      Locução para preview
+                      <select
+                        value={previewVoiceId}
+                        onChange={(e) => setPreviewVoiceId(e.target.value)}
+                        disabled={voiceovers.length === 0}
+                      >
+                        {voiceovers.length === 0 ? (
+                          <option value="">Nenhuma locução disponível</option>
+                        ) : (
+                          voiceovers.map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {getAudioDisplayName(item.file_url)}
+                            </option>
+                          ))
+                        )}
+                      </select>
+                      <audio
+                        ref={previewVoiceRef}
+                        controls
+                        preload="metadata"
+                        src={voiceovers.find((v) => v.id === previewVoiceId)?.file_url}
+                        style={{ width: '100%' }}
+                      />
+                    </label>
+                  </div>
+
+                  <div className="audio-preview-actions" style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 'var(--space-3)' }}>
+                    <button
+                      type="button"
+                      className="secondary audio-preview-run-btn"
+                      onClick={() => void handleRunDuckingPreview()}
+                      disabled={!previewMusicId || !previewVoiceId}
+                    >
+                      Testar Ducking Agora
+                    </button>
+                  </div>
                 </div>
               </article>
             </>
