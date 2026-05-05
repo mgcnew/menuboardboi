@@ -79,6 +79,13 @@ function moveItem(items: ImageAsset[], fromIndex: number, toIndex: number) {
   return next;
 }
 
+function getAudioDisplayName(fileUrl: string) {
+  const rawName = getFileName(fileUrl);
+  return rawName
+    .replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}[_-]?/i, '')
+    .replace(/^[0-9]{10,}[_-]?/, '');
+}
+
 /**
  * Busca todos os assets (imagens, musicas, locucoes) de uma empresa.
  */
@@ -160,6 +167,7 @@ function ConfigMode() {
 
   // Tab state - default to 'images' for non-admins
   const [activeTab, setActiveTab] = useState<TabId>('images'); // Default inicial seguro
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
   // Update active tab based on auth role
   useEffect(() => {
@@ -312,6 +320,10 @@ function ConfigMode() {
       return () => clearTimeout(timer);
     }
   }, [feedback]);
+
+  useEffect(() => {
+    setIsMobileMenuOpen(false);
+  }, [activeTab]);
 
   const handleCreateCompany = useCallback(async () => {
     if (!newCompanyName.trim()) {
@@ -575,6 +587,16 @@ function ConfigMode() {
       <header className="topbar">
         <div className="topbar-brand">
           <h1>TV Ads Player</h1>
+          <button
+            type="button"
+            className="hamburger-button"
+            aria-label="Abrir menu"
+            aria-expanded={isMobileMenuOpen}
+            aria-controls="mobile-main-menu"
+            onClick={() => setIsMobileMenuOpen((prev) => !prev)}
+          >
+            ☰
+          </button>
         </div>
 
         <nav className="topbar-nav" aria-label="Navegação Principal">
@@ -662,6 +684,104 @@ function ConfigMode() {
           <button onClick={() => void signOut()} className="secondary">Sair</button>
         </div>
       </header>
+
+      <div
+        id="mobile-main-menu"
+        className={`mobile-menu ${isMobileMenuOpen ? 'open' : ''}`}
+        aria-hidden={!isMobileMenuOpen}
+      >
+        <nav className="mobile-menu-nav" aria-label="Navegação principal mobile">
+          {(isMasterAdmin || profile?.role === 'master_admin') && (
+            <button
+              type="button"
+              role="tab"
+              className="topbar-tab"
+              aria-selected={activeTab === 'company'}
+              aria-controls="panel-company"
+              id="mobile-tab-company"
+              onClick={() => setActiveTab('company')}
+            >
+              Empresa
+            </button>
+          )}
+          <button
+            type="button"
+            role="tab"
+            className="topbar-tab"
+            aria-selected={activeTab === 'media'}
+            aria-controls="panel-media"
+            id="mobile-tab-media"
+            onClick={() => setActiveTab('media')}
+            disabled={(isMasterAdmin || profile?.role === 'master_admin') && !selectedCompanyId}
+          >
+            Configurações
+          </button>
+          <button
+            type="button"
+            role="tab"
+            className="topbar-tab"
+            aria-selected={activeTab === 'images'}
+            aria-controls="panel-images"
+            id="mobile-tab-images"
+            onClick={() => setActiveTab('images')}
+            disabled={(isMasterAdmin || profile?.role === 'master_admin') && !selectedCompanyId}
+          >
+            Fotos
+          </button>
+          <button
+            type="button"
+            role="tab"
+            className="topbar-tab"
+            aria-selected={activeTab === 'music'}
+            aria-controls="panel-music"
+            id="mobile-tab-music"
+            onClick={() => setActiveTab('music')}
+            disabled={(isMasterAdmin || profile?.role === 'master_admin') && !selectedCompanyId}
+          >
+            Músicas
+          </button>
+          <button
+            type="button"
+            role="tab"
+            className="topbar-tab"
+            aria-selected={activeTab === 'voiceovers'}
+            aria-controls="panel-voiceovers"
+            id="mobile-tab-voiceovers"
+            onClick={() => setActiveTab('voiceovers')}
+            disabled={(isMasterAdmin || profile?.role === 'master_admin') && !selectedCompanyId}
+          >
+            Locuções
+          </button>
+          <button
+            type="button"
+            role="tab"
+            className="topbar-tab"
+            aria-selected={activeTab === 'whatsapp'}
+            aria-controls="panel-whatsapp"
+            id="mobile-tab-whatsapp"
+            onClick={() => setActiveTab('whatsapp')}
+            disabled={(isMasterAdmin || profile?.role === 'master_admin') && !selectedCompanyId}
+          >
+            WhatsApp
+          </button>
+        </nav>
+        <div className="mobile-menu-actions">
+          {selectedCompanyId ? (
+            <a
+              className="primary-link"
+              href={buildTvUrl(selectedCompany?.access_code)}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`Abrir modo TV para a empresa ${selectedCompany?.name ?? ''}`}
+            >
+              Exibir TV
+            </a>
+          ) : null}
+          <button type="button" onClick={() => void signOut()} className="secondary">
+            Sair
+          </button>
+        </div>
+      </div>
 
       <div className="shell">
         {!isSupabaseConfigured ? (
@@ -1291,7 +1411,7 @@ function ConfigMode() {
               <header className="section-header">
                 <div>
                   <h3>🎵 Preview de Música</h3>
-                  <p>{getFileName(currentlyPlayingMusic.file_url)}</p>
+                  <p>{getAudioDisplayName(currentlyPlayingMusic.file_url)}</p>
                 </div>
                 <button 
                   type="button" 
@@ -1384,7 +1504,18 @@ function ConfigMode() {
               <h3 id="modal-title">Confirmar exclusão</h3>
               <p>Tem certeza de que deseja remover este item? Esta ação não pode ser desfeita.</p>
               <p style={{ marginTop: '0.5rem', fontWeight: 500, wordBreak: 'break-all' }}>
-                {getFileName(itemToDelete.asset.file_url)}
+                <span
+                  title={getFileName(itemToDelete.asset.file_url)}
+                  style={{
+                    display: 'block',
+                    maxWidth: '100%',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap'
+                  }}
+                >
+                  {getFileName(itemToDelete.asset.file_url)}
+                </span>
               </p>
             </div>
             <div className="modal-actions">
@@ -1559,7 +1690,7 @@ function AssetList({ items, emptyText, busy, onDelete, onPlay, currentlyPlayingI
             </div>
             <div className="asset-copy">
               <strong style={{ color: isCurrentlyPlaying ? 'var(--accent-color)' : 'inherit' }}>
-                {getFileName(asset.file_url)}
+                {getAudioDisplayName(asset.file_url)}
               </strong>
               <span>Cadastrado em {new Date(asset.created_at).toLocaleDateString('pt-BR')}</span>
             </div>
@@ -1574,7 +1705,7 @@ function AssetList({ items, emptyText, busy, onDelete, onPlay, currentlyPlayingI
                     onPlay(asset);
                   }}
                   disabled={busy}
-                  aria-label={`Ouvir prévia de ${getFileName(asset.file_url)}`}
+                  aria-label={`Ouvir prévia de ${getAudioDisplayName(asset.file_url)}`}
                 >
                   🔊 Preview
                 </button>
