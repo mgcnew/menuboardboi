@@ -91,6 +91,7 @@ export type WhatsAppBanner = {
   name: string;
   file_url: string;
   file_size: number;
+  is_active: boolean;
   created_at: string;
   updated_at: string;
 };

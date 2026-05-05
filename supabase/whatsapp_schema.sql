@@ -10,6 +10,7 @@ create table if not exists public.whatsapp_banners (
   name text not null,
   file_url text not null,
   file_size bigint not null default 0,
+  is_active boolean not null default true,
   created_at timestamptz not null default timezone('utc'::text, now()),
   updated_at timestamptz not null default timezone('utc'::text, now())
 );

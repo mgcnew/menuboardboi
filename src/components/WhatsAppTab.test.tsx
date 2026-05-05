@@ -1,0 +1,134 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { WhatsAppTab } from './WhatsAppTab';
+import * as supabaseLib from '../lib/supabase';
+
+// Mock Supabase functions
+vi.mock('../lib/supabase', () => {
+  return {
+    supabase: {
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({
+            order: vi.fn(() => Promise.resolve({ data: [] }))
+          })),
+        })),
+      })),
+    },
+    listWhatsAppBanners: vi.fn().mockResolvedValue([]),
+    uploadWhatsAppBanners: vi.fn(),
+    uploadSingleWhatsAppBanner: vi.fn(),
+    deleteWhatsAppBanner: vi.fn(),
+    updateWhatsAppBannerStatus: vi.fn(),
+    updateWhatsAppBanner: vi.fn(),
+    listWhatsAppTemplates: vi.fn().mockResolvedValue([]),
+    createWhatsAppTemplate: vi.fn(),
+    updateWhatsAppTemplate: vi.fn(),
+    deleteWhatsAppTemplate: vi.fn(),
+  };
+});
+
+describe('WhatsAppTab - Banners', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('renders loading state initially', () => {
+    render(<WhatsAppTab companyId="test-company" />);
+    expect(screen.queryByText('Carregando dados do WhatsApp...')).not.toBeNull();
+  });
+
+  it('loads and displays banners', async () => {
+    const mockBanners = [
+      { id: '1', company_id: 'test-company', name: 'Promo 1.jpg', file_url: 'http://test/1.jpg', file_size: 1024, is_active: true, created_at: '', updated_at: '' },
+    ];
+    
+    vi.mocked(supabaseLib.listWhatsAppBanners).mockResolvedValue(mockBanners);
+
+    render(<WhatsAppTab companyId="test-company" />);
+
+    await waitFor(() => {
+      expect(screen.queryByText('Carregando dados do WhatsApp...')).toBeNull();
+    });
+
+    expect(screen.queryByText('Promo 1.jpg')).not.toBeNull();
+    expect(screen.queryByText('ATIVO')).not.toBeNull();
+  });
+
+  it('handles banner status toggle', async () => {
+    const mockBanners = [
+      { id: '1', company_id: 'test-company', name: 'Promo 1.jpg', file_url: 'http://test/1.jpg', file_size: 1024, is_active: true, created_at: '', updated_at: '' },
+    ];
+    
+    vi.mocked(supabaseLib.listWhatsAppBanners).mockResolvedValue(mockBanners);
+    vi.mocked(supabaseLib.updateWhatsAppBannerStatus).mockResolvedValue();
+
+    render(<WhatsAppTab companyId="test-company" />);
+
+    await waitFor(() => {
+      expect(screen.queryByText('Desativar')).not.toBeNull();
+    });
+
+    fireEvent.click(screen.getByText('Desativar'));
+
+    expect(supabaseLib.updateWhatsAppBannerStatus).toHaveBeenCalledWith('1', false);
+  });
+});
+
+describe('WhatsAppTab - Templates', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('loads and displays templates', async () => {
+    const mockTemplates = [
+      { id: '1', company_id: 'test-company', name: 'Oferta', message_text: 'Olá {nome}', created_at: '' },
+    ];
+    
+    vi.mocked(supabaseLib.listWhatsAppTemplates).mockResolvedValue(mockTemplates);
+
+    render(<WhatsAppTab companyId="test-company" />);
+
+    // Switch to Templates tab
+    await waitFor(() => {
+      expect(screen.queryByText('Templates')).not.toBeNull();
+    });
+    fireEvent.click(screen.getByText('Templates'));
+
+    await waitFor(() => {
+      expect(screen.queryByText('Oferta')).not.toBeNull();
+    });
+
+    expect(screen.queryByText('Olá {nome}')).not.toBeNull();
+  });
+
+  it('can open template form and save new template', async () => {
+    vi.mocked(supabaseLib.listWhatsAppTemplates).mockResolvedValue([]);
+    vi.mocked(supabaseLib.createWhatsAppTemplate).mockResolvedValue({ id: '2', company_id: 'test-company', name: 'New', message_text: 'Test', created_at: '' });
+
+    render(<WhatsAppTab companyId="test-company" />);
+
+    // Switch to Templates tab
+    await waitFor(() => {
+      fireEvent.click(screen.getByText('Templates'));
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText('+ Novo Template')).not.toBeNull();
+    });
+
+    fireEvent.click(screen.getByText('+ Novo Template'));
+
+    // Fill form
+    const nameInput = screen.getByPlaceholderText('Ex: Promoção de Fim de Ano');
+    const textInput = screen.getByPlaceholderText('Olá {nome}! Temos uma oferta especial...');
+
+    fireEvent.change(nameInput, { target: { value: 'New' } });
+    fireEvent.change(textInput, { target: { value: 'Test' } });
+
+    fireEvent.click(screen.getByText('Salvar Template'));
+
+    expect(supabaseLib.createWhatsAppTemplate).toHaveBeenCalledWith('test-company', 'New', 'Test');
+  });
+});
+

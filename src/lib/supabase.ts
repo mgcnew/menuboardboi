@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import type { AudioAsset, Company, ImageAsset, MediaKind, Profile, CompanyUsage, UserRole, WhatsAppCredentials } from '../types';
+import type { AudioAsset, Company, ImageAsset, MediaKind, Profile, CompanyUsage, UserRole, WhatsAppCredentials, WhatsAppBanner, WhatsAppPostTemplate, WhatsAppContact } from '../types';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -511,4 +511,202 @@ export async function saveWhatsAppCredentials(
     throw error;
   }
   return data as WhatsAppCredentials;
+}
+
+// WhatsApp Contacts
+export async function listWhatsAppContacts(companyId: string): Promise<WhatsAppContact[]> {
+  const client = assertSupabase();
+  const { data, error } = await client
+    .from('whatsapp_contacts')
+    .select('*')
+    .eq('company_id', companyId)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data as WhatsAppContact[];
+}
+
+export async function createWhatsAppContact(
+  companyId: string, 
+  name: string, 
+  phone_numbers: string[], 
+  segment: string | null
+): Promise<WhatsAppContact> {
+  const client = assertSupabase();
+  const { data, error } = await client
+    .from('whatsapp_contacts')
+    .insert({ company_id: companyId, name, phone_numbers, segment })
+    .select('*')
+    .single();
+
+  if (error) throw error;
+  return data as WhatsAppContact;
+}
+
+export async function updateWhatsAppContact(
+  contactId: string, 
+  name: string, 
+  phone_numbers: string[], 
+  segment: string | null
+): Promise<WhatsAppContact> {
+  const client = assertSupabase();
+  const { data, error } = await client
+    .from('whatsapp_contacts')
+    .update({ name, phone_numbers, segment })
+    .eq('id', contactId)
+    .select('*')
+    .single();
+
+  if (error) throw error;
+  return data as WhatsAppContact;
+}
+
+export async function deleteWhatsAppContact(contactId: string): Promise<void> {
+  const client = assertSupabase();
+  const { error } = await client.from('whatsapp_contacts').delete().eq('id', contactId);
+  if (error) throw error;
+}
+
+export async function importWhatsAppContacts(companyId: string, contacts: {name: string, phone: string, segment?: string}[]): Promise<void> {
+  const client = assertSupabase();
+  
+  // Transform flat structure to the array-based structure of the database
+  // Grouping by name/segment to merge multiple phones into one contact could be done, 
+  // but for simplicity, we'll insert one phone per contact.
+  const inserts = contacts.map(c => ({
+    company_id: companyId,
+    name: c.name,
+    phone_numbers: [c.phone],
+    segment: c.segment || null
+  }));
+
+  const { error } = await client.from('whatsapp_contacts').insert(inserts);
+  if (error) throw error;
+}
+export async function listWhatsAppTemplates(companyId: string): Promise<WhatsAppPostTemplate[]> {
+  const client = assertSupabase();
+  const { data, error } = await client
+    .from('whatsapp_post_templates')
+    .select('*')
+    .eq('company_id', companyId)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data as WhatsAppPostTemplate[];
+}
+
+export async function createWhatsAppTemplate(companyId: string, name: string, message_text: string): Promise<WhatsAppPostTemplate> {
+  const client = assertSupabase();
+  const { data, error } = await client
+    .from('whatsapp_post_templates')
+    .insert({ company_id: companyId, name, message_text })
+    .select('*')
+    .single();
+
+  if (error) throw error;
+  return data as WhatsAppPostTemplate;
+}
+
+export async function updateWhatsAppTemplate(templateId: string, name: string, message_text: string): Promise<WhatsAppPostTemplate> {
+  const client = assertSupabase();
+  const { data, error } = await client
+    .from('whatsapp_post_templates')
+    .update({ name, message_text })
+    .eq('id', templateId)
+    .select('*')
+    .single();
+
+  if (error) throw error;
+  return data as WhatsAppPostTemplate;
+}
+
+export async function deleteWhatsAppTemplate(templateId: string): Promise<void> {
+  const client = assertSupabase();
+  const { error } = await client.from('whatsapp_post_templates').delete().eq('id', templateId);
+  if (error) throw error;
+}
+export async function listWhatsAppBanners(companyId: string): Promise<WhatsAppBanner[]> {
+  const client = assertSupabase();
+  const { data, error } = await client
+    .from('whatsapp_banners')
+    .select('*')
+    .eq('company_id', companyId)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data as WhatsAppBanner[];
+}
+
+export async function uploadWhatsAppBanners(companyId: string, files: File[]): Promise<void> {
+  for (const file of files) {
+    await uploadSingleWhatsAppBanner(companyId, file, file.name);
+  }
+}
+
+export async function uploadSingleWhatsAppBanner(companyId: string, file: File, name: string): Promise<WhatsAppBanner> {
+  const client = assertSupabase();
+
+  const fileExt = file.name.split('.').pop();
+  const filePath = `${companyId}/${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
+  
+  const { error: uploadError } = await client.storage
+    .from('whatsapp_banners')
+    .upload(filePath, file, { cacheControl: '3600', upsert: false });
+
+  if (uploadError) throw uploadError;
+
+  const { data: { publicUrl } } = client.storage
+    .from('whatsapp_banners')
+    .getPublicUrl(filePath);
+
+  const { data, error: insertError } = await client.from('whatsapp_banners').insert({
+    company_id: companyId,
+    name: name,
+    file_url: publicUrl,
+    file_size: file.size,
+    is_active: true
+  }).select('*').single();
+
+  if (insertError) throw insertError;
+  return data as WhatsAppBanner;
+}
+
+export async function deleteWhatsAppBanner(banner: WhatsAppBanner): Promise<void> {
+  const client = assertSupabase();
+  
+  // Extract path from public URL
+  const urlParts = banner.file_url.split('/whatsapp_banners/');
+  if (urlParts.length > 1) {
+    const filePath = urlParts[1];
+    const { error: storageError } = await client.storage
+      .from('whatsapp_banners')
+      .remove([filePath]);
+    if (storageError) console.error('Error removing file from storage:', storageError);
+  }
+
+  const { error } = await client.from('whatsapp_banners').delete().eq('id', banner.id);
+  if (error) throw error;
+}
+
+export async function updateWhatsAppBannerStatus(bannerId: string, is_active: boolean): Promise<void> {
+  const client = assertSupabase();
+  const { error } = await client
+    .from('whatsapp_banners')
+    .update({ is_active, updated_at: new Date().toISOString() })
+    .eq('id', bannerId);
+  
+  if (error) throw error;
+}
+
+export async function updateWhatsAppBanner(bannerId: string, name: string): Promise<WhatsAppBanner> {
+  const client = assertSupabase();
+  const { data, error } = await client
+    .from('whatsapp_banners')
+    .update({ name, updated_at: new Date().toISOString() })
+    .eq('id', bannerId)
+    .select('*')
+    .single();
+  
+  if (error) throw error;
+  return data as WhatsAppBanner;
 }
