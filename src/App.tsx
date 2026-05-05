@@ -987,9 +987,10 @@ function ConfigMode() {
                     background: '#000', 
                     overflow: 'hidden',
                     margin: '0 auto',
-                    height: '300px',
-                    width: previewResolution === 'landscape' ? '100%' : previewResolution === 'portrait' ? '168px' : '300px',
-                    transition: 'width 0.3s ease'
+                    width: '100%',
+                    maxWidth: previewResolution === 'landscape' ? '704px' : previewResolution === 'portrait' ? '198px' : '330px',
+                    aspectRatio: previewResolution === 'landscape' ? '16/9' : previewResolution === 'portrait' ? '9/16' : '1/1',
+                    transition: 'all 0.3s ease'
                   }}>
                   {images.length > 0 ? (
                     <>
