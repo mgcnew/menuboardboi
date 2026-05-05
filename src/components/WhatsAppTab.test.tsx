@@ -24,8 +24,60 @@ vi.mock('../lib/supabase', () => {
     listWhatsAppTemplates: vi.fn().mockResolvedValue([]),
     createWhatsAppTemplate: vi.fn(),
     updateWhatsAppTemplate: vi.fn(),
-    deleteWhatsAppTemplate: vi.fn(),
+  deleteWhatsAppTemplate: vi.fn(),
+  listWhatsAppContacts: vi.fn().mockResolvedValue([]),
+  createWhatsAppContact: vi.fn(),
+  updateWhatsAppContact: vi.fn(),
+  deleteWhatsAppContact: vi.fn(),
+  importWhatsAppContacts: vi.fn(),
   };
+});
+
+describe('WhatsAppTab - Contacts', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('handles contact search and creation', async () => {
+    const mockContacts = [
+      { id: '1', company_id: 'test-company', name: 'João', phone_numbers: ['5511999999999'], segment: 'VIP', created_at: '' },
+    ];
+    
+    vi.mocked(supabaseLib.listWhatsAppContacts).mockResolvedValue(mockContacts);
+
+    render(<WhatsAppTab companyId="test-company" />);
+
+    // Switch to Contacts tab
+    await waitFor(() => {
+      expect(screen.queryByText('Contatos')).not.toBeNull();
+    });
+    fireEvent.click(screen.getByText('Contatos'));
+
+    await waitFor(() => {
+      expect(screen.queryByText('João')).not.toBeNull();
+    });
+
+    // Test Search
+    const searchInput = screen.getByPlaceholderText('Buscar contatos por nome, telefone ou segmento...');
+    fireEvent.change(searchInput, { target: { value: 'Inexistente' } });
+    expect(screen.queryByText('João')).toBeNull();
+
+    fireEvent.change(searchInput, { target: { value: 'VIP' } });
+    expect(screen.queryByText('João')).not.toBeNull();
+
+    // Test New Contact
+    fireEvent.click(screen.getByText('+ Novo Contato'));
+    
+    const nameInput = screen.getByPlaceholderText('Ex: João da Silva');
+    const phoneInput = screen.getByPlaceholderText('Ex: 5511999999999, 5511888888888');
+    
+    fireEvent.change(nameInput, { target: { value: 'Maria' } });
+    fireEvent.change(phoneInput, { target: { value: '5511888888888' } });
+
+    fireEvent.click(screen.getByText('Salvar Contato'));
+
+    expect(supabaseLib.createWhatsAppContact).toHaveBeenCalledWith('test-company', 'Maria', ['5511888888888'], null);
+  });
 });
 
 describe('WhatsAppTab - Banners', () => {

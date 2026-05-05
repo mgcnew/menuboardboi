@@ -10,9 +10,15 @@ import {
   listWhatsAppTemplates,
   createWhatsAppTemplate,
   updateWhatsAppTemplate,
-  deleteWhatsAppTemplate
+  deleteWhatsAppTemplate,
+  listWhatsAppContacts,
+  createWhatsAppContact,
+  updateWhatsAppContact,
+  deleteWhatsAppContact,
+  importWhatsAppContacts
 } from '../lib/supabase';
 import { formatBytes } from '../lib/utils';
+import * as XLSX from 'xlsx';
 
 type SubTab = 'banners' | 'templates' | 'contacts' | 'posts';
 
@@ -39,13 +45,13 @@ export function WhatsAppTab({ companyId }: WhatsAppTabProps) {
       const [resBanners, resTemplates, resContacts, resPosts] = await Promise.all([
         listWhatsAppBanners(companyId).then(data => ({ data, error: null })).catch(error => ({ data: null, error })),
         listWhatsAppTemplates(companyId).then(data => ({ data, error: null })).catch(error => ({ data: null, error })),
-        supabase.from('whatsapp_contacts').select('*').eq('company_id', companyId),
+        listWhatsAppContacts(companyId).then(data => ({ data, error: null })).catch(error => ({ data: null, error })),
         supabase.from('whatsapp_posts').select('*').eq('company_id', companyId).order('created_at', { ascending: false })
       ]);
 
       if (resBanners.data) setBanners(resBanners.data as WhatsAppBanner[]);
       if (resTemplates.data) setTemplates(resTemplates.data as WhatsAppPostTemplate[]);
-      if (resContacts.data) setContacts(resContacts.data);
+      if (resContacts.data) setContacts(resContacts.data as WhatsAppContact[]);
       if (resPosts.data) setPosts(resPosts.data);
 
     } catch (err) {
@@ -70,6 +76,15 @@ export function WhatsAppTab({ companyId }: WhatsAppTabProps) {
       setTemplates(data);
     } catch (err) {
       console.error('Failed to reload templates', err);
+    }
+  }, [companyId]);
+
+  const reloadContacts = useCallback(async () => {
+    try {
+      const data = await listWhatsAppContacts(companyId);
+      setContacts(data);
+    } catch (err) {
+      console.error('Failed to reload contacts', err);
     }
   }, [companyId]);
 
@@ -99,7 +114,7 @@ export function WhatsAppTab({ companyId }: WhatsAppTabProps) {
         <div className="whatsapp-content">
           {activeSubTab === 'banners' && <BannersSection companyId={companyId} banners={banners} onReload={reloadBanners} />}
           {activeSubTab === 'templates' && <TemplatesSection companyId={companyId} templates={templates} onReload={reloadTemplates} />}
-          {activeSubTab === 'contacts' && <ContactsSection contacts={contacts} />}
+          {activeSubTab === 'contacts' && <ContactsSection companyId={companyId} contacts={contacts} onReload={reloadContacts} />}
           {activeSubTab === 'posts' && <PostsSection posts={posts} banners={banners} templates={templates} contacts={contacts} />}
         </div>
       )}
@@ -532,26 +547,286 @@ function TemplatesSection({ companyId, templates, onReload }: { companyId: strin
   );
 }
 
-function ContactsSection({ contacts }: { contacts: WhatsAppContact[] }) {
+function ContactsSection({ companyId, contacts, onReload }: { companyId: string, contacts: WhatsAppContact[], onReload: () => void }) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [currentContact, setCurrentContact] = useState<Partial<WhatsAppContact> | null>(null);
+  const [phonesInput, setPhonesInput] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  
+  // Excel/CSV Import
+  const [isImporting, setIsImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentContact?.name?.trim() || !phonesInput.trim()) {
+      alert('Preencha o nome e pelo menos um número de telefone.');
+      return;
+    }
+
+    const phone_numbers = phonesInput
+      .split(',')
+      .map(p => p.replace(/\D/g, ''))
+      .filter(p => p.length > 0);
+
+    if (phone_numbers.length === 0) {
+      alert('Nenhum número de telefone válido encontrado. Use apenas números.');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      if (currentContact.id) {
+        await updateWhatsAppContact(currentContact.id, currentContact.name, phone_numbers, currentContact.segment || null);
+      } else {
+        await createWhatsAppContact(companyId, currentContact.name, phone_numbers, currentContact.segment || null);
+      }
+      onReload();
+      setIsEditing(false);
+      setCurrentContact(null);
+      setPhonesInput('');
+    } catch (error) {
+      console.error('Error saving contact:', error);
+      alert('Erro ao salvar contato.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async (contactId: string) => {
+    if (!confirm('Tem certeza que deseja excluir este contato?')) return;
+    setDeletingId(contactId);
+    try {
+      await deleteWhatsAppContact(contactId);
+      onReload();
+    } catch (error) {
+      console.error('Error deleting contact:', error);
+      alert('Erro ao excluir contato.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleEdit = (contact: WhatsAppContact) => {
+    setCurrentContact(contact);
+    setPhonesInput(contact.phone_numbers.join(', '));
+    setIsEditing(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data);
+      const firstSheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheetName];
+      
+      // Try to read assuming the first row is a header
+      let jsonData = XLSX.utils.sheet_to_json(worksheet) as any[];
+      
+      // If it's completely empty or looks weird, we could try header: 1
+      if (jsonData.length === 0) {
+        jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[];
+        // Drop the first row if it's a header
+        if (jsonData.length > 0) jsonData.shift();
+      }
+      
+      const parsedContacts: { name: string, phone: string, segment?: string }[] = [];
+      
+      for (const row of jsonData) {
+        let name, phone, segment;
+        
+        if (Array.isArray(row)) {
+          // If header: 1 was used or data is an array
+          name = row[0];
+          phone = row[1];
+          segment = row[2];
+        } else if (typeof row === 'object' && row !== null) {
+          // Find keys case-insensitively
+          const keys = Object.keys(row);
+          const nameKey = keys.find(k => k.toLowerCase().includes('nome') || k.toLowerCase() === 'name') || keys[0];
+          const phoneKey = keys.find(k => k.toLowerCase().includes('telefone') || k.toLowerCase().includes('celular') || k.toLowerCase().includes('numero') || k.toLowerCase().includes('phone')) || keys[1];
+          const segmentKey = keys.find(k => k.toLowerCase().includes('segmento') || k.toLowerCase().includes('tag') || k.toLowerCase().includes('grupo')) || keys[2];
+          
+          name = row[nameKey];
+          phone = row[phoneKey];
+          segment = segmentKey ? row[segmentKey] : undefined;
+        }
+
+        if (name && phone) {
+          const cleanPhone = String(phone).replace(/\D/g, '');
+          if (cleanPhone.length >= 8) { // Basic validation
+            parsedContacts.push({
+              name: String(name).trim(),
+              phone: cleanPhone,
+              segment: segment ? String(segment).trim() : undefined
+            });
+          }
+        }
+      }
+
+      if (parsedContacts.length === 0) {
+        alert('Nenhum contato válido encontrado no arquivo. Certifique-se de ter colunas de "Nome" e "Telefone".');
+        return;
+      }
+
+      await importWhatsAppContacts(companyId, parsedContacts);
+      alert(`${parsedContacts.length} contatos importados com sucesso!`);
+      onReload();
+    } catch (error) {
+      console.error('Error importing contacts:', error);
+      alert('Erro ao importar arquivo. Verifique o formato.');
+    } finally {
+      setIsImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const filteredContacts = contacts.filter(c => 
+    c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    (c.segment && c.segment.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    c.phone_numbers.some(p => p.includes(searchTerm))
+  );
+
   return (
     <article className="panel">
       <header className="section-header">
         <div>
           <h3>Contatos e Segmentos</h3>
-          <p>Gerencie listas de transmissão e números de telefone.</p>
+          <p>Gerencie contatos ou importe listas Excel/CSV para criar suas campanhas.</p>
         </div>
-        <button className="primary">+ Novo Contato/Lista</button>
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          {isImporting && <span className="tag" aria-live="polite">Importando...</span>}
+          <label className="upload-button" aria-label="Importar Excel/CSV">
+            <input
+              type="file"
+              accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
+              disabled={isImporting || isEditing}
+              onChange={handleImport}
+              ref={fileInputRef}
+              style={{ display: 'none' }}
+            />
+            <span className="button secondary" aria-hidden="true" style={{ cursor: 'pointer' }}>
+              Importar Excel/CSV
+            </span>
+          </label>
+          <button 
+            className="primary" 
+            onClick={() => { setIsEditing(true); setCurrentContact({ name: '', segment: '' }); setPhonesInput(''); }}
+            disabled={isEditing || isImporting}
+          >
+            + Novo Contato
+          </button>
+        </div>
       </header>
 
-      <ul className="asset-list" style={{ marginTop: 'var(--space-4)' }}>
-        {contacts.length === 0 ? (
-          <p className="empty-state">Nenhum contato cadastrado.</p>
+      {isEditing && (
+        <form className="form-grid" onSubmit={handleSave} style={{ background: 'var(--bg-subtle)', padding: 'var(--space-4)', borderRadius: 'var(--radius-md)', marginTop: 'var(--space-4)', border: '1px solid var(--border-default)' }}>
+          <h4>{currentContact?.id ? 'Editar Contato' : 'Novo Contato'}</h4>
+          
+          <label>
+            Nome
+            <input 
+              type="text" 
+              placeholder="Ex: João da Silva" 
+              value={currentContact?.name || ''}
+              onChange={e => setCurrentContact({ ...currentContact, name: e.target.value })}
+              disabled={isSaving}
+            />
+          </label>
+
+          <label>
+            Números de Telefone (Separados por vírgula)
+            <input 
+              type="text" 
+              placeholder="Ex: 5511999999999, 5511888888888" 
+              value={phonesInput}
+              onChange={e => setPhonesInput(e.target.value)}
+              disabled={isSaving}
+            />
+          </label>
+
+          <label>
+            Segmento / Tag (Opcional)
+            <input 
+              type="text" 
+              placeholder="Ex: Clientes VIP, Black Friday" 
+              value={currentContact?.segment || ''}
+              onChange={e => setCurrentContact({ ...currentContact, segment: e.target.value })}
+              disabled={isSaving}
+            />
+          </label>
+
+          <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
+            <button type="submit" className="primary" disabled={isSaving}>
+              {isSaving ? 'Salvando...' : 'Salvar Contato'}
+            </button>
+            <button type="button" className="secondary" onClick={() => { setIsEditing(false); setCurrentContact(null); }} disabled={isSaving}>
+              Cancelar
+            </button>
+          </div>
+        </form>
+      )}
+
+      <div style={{ marginTop: 'var(--space-4)', position: 'relative' }}>
+        <input 
+          type="text" 
+          placeholder="Buscar contatos por nome, telefone ou segmento..." 
+          value={searchTerm}
+          onChange={e => setSearchTerm(e.target.value)}
+          style={{ width: '100%', marginBottom: 'var(--space-4)', paddingRight: '2rem' }}
+        />
+        {searchTerm && (
+          <button 
+            type="button"
+            onClick={() => setSearchTerm('')}
+            style={{ position: 'absolute', right: '0.5rem', top: '0.5rem', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+          >
+            ✕
+          </button>
+        )}
+      </div>
+
+      <ul className="asset-list">
+        {filteredContacts.length === 0 ? (
+          <p className="empty-state">
+            {searchTerm ? 'Nenhum contato encontrado.' : 'Nenhum contato cadastrado.'}
+          </p>
         ) : (
-          contacts.map(c => (
+          filteredContacts.map(c => (
             <li key={c.id} className="asset-row">
               <div className="asset-copy">
-                <strong>{c.name} {c.segment && <span className="tag">{c.segment}</span>}</strong>
-                <p style={{ fontSize: '0.8rem' }}>{c.phone_numbers.length} número(s) cadastrado(s)</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <strong>{c.name}</strong> 
+                  {c.segment && <span className="tag success">{c.segment}</span>}
+                </div>
+                <p style={{ fontSize: '0.85rem', marginTop: '4px', color: 'var(--text-muted)' }}>
+                  {c.phone_numbers.join(', ')}
+                </p>
+              </div>
+              <div className="asset-actions">
+                <button 
+                  type="button" 
+                  className="secondary" 
+                  onClick={() => handleEdit(c)}
+                  disabled={isEditing}
+                >
+                  Editar
+                </button>
+                <button 
+                  type="button" 
+                  className="danger" 
+                  onClick={() => handleDelete(c.id)}
+                  disabled={deletingId === c.id || isEditing}
+                >
+                  {deletingId === c.id ? '...' : 'Excluir'}
+                </button>
               </div>
             </li>
           ))
