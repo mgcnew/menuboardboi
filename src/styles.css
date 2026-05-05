@@ -466,8 +466,50 @@ button.danger:hover {
   font-weight: 500;
 }
 
+.tag.success {
+  background: #d1fae5;
+  color: #065f46;
+  border-color: #34d399;
+}
+
+.tag.danger {
+  background: #fee2e2;
+  color: #991b1b;
+  border-color: #f87171;
+}
+
 .warning {
   border-left: 4px solid #f59e0b;
+}
+
+/* WhatsApp Sub-Tabs */
+.sub-tabs-list {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border-default);
+  padding-bottom: var(--space-2);
+  overflow-x: auto;
+}
+
+.sub-tabs-list .tab-button {
+  background: transparent;
+  color: var(--text-secondary);
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.sub-tabs-list .tab-button:hover {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+
+.sub-tabs-list .tab-button.active {
+  background: var(--bg-inverted);
+  color: var(--text-inverted);
 }
 
 /* TV Mode (Unchanged structure, refined minimal styling) */

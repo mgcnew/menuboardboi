@@ -25,6 +25,7 @@ import { compressImageFile, formatBytes, getFileName, validateImage, validateAud
 import { useAudioSettings } from './hooks/useAudioSettings';
 import { useAudioMixer } from './hooks/useAudioMixer';
 import { useActiveImages } from './hooks/useActiveImages';
+import { WhatsAppTab } from './components/WhatsAppTab';
 import type { AudioAsset, Company, ImageAsset, MediaKind, Player } from './types';
 
 const COMPANY_STORAGE_KEY = 'tv-ads-player-company-id';
@@ -122,7 +123,7 @@ function ConfigModeWrapper() {
  * Modo Configuração: Interface principal administrativa.
  * Design acessível, semântico e com alta legibilidade (WCAG 2.1).
  */
-type TabId = 'company' | 'media' | 'images' | 'music' | 'voiceovers';
+type TabId = 'company' | 'media' | 'images' | 'music' | 'voiceovers' | 'whatsapp';
 
 function ConfigMode() {
   const { profile, isMasterAdmin, loading: authLoading, signOut } = useAuth();
@@ -606,6 +607,17 @@ function ConfigMode() {
           disabled={(isMasterAdmin || profile?.role === 'master_admin') && !selectedCompanyId}
         >
           Locuções
+        </button>
+        <button
+          role="tab"
+          className="tab-button"
+          aria-selected={activeTab === 'whatsapp'}
+          aria-controls="panel-whatsapp"
+          id="tab-whatsapp"
+          onClick={() => setActiveTab('whatsapp')}
+          disabled={(isMasterAdmin || profile?.role === 'master_admin') && !selectedCompanyId}
+        >
+          WhatsApp
         </button>
       </div>
 
@@ -1219,6 +1231,21 @@ function ConfigMode() {
               busy={busy}
             />
           </MediaSection>
+        </section>
+
+        {/* Aba: WhatsApp */}
+        <section
+          id="panel-whatsapp"
+          role="tabpanel"
+          aria-labelledby="tab-whatsapp"
+          className="tab-panel"
+          hidden={activeTab !== 'whatsapp'}
+        >
+          {selectedCompanyId ? (
+            <WhatsAppTab companyId={selectedCompanyId} />
+          ) : (
+            <EmptyState text="Selecione uma empresa para configurar o WhatsApp." />
+          )}
         </section>
       </main>
 
