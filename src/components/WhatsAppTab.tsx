@@ -3,7 +3,7 @@ import type { WhatsAppBanner, WhatsAppPostTemplate, WhatsAppContact, WhatsAppPos
 import { supabase } from '../lib/supabase';
 import { formatBytes } from '../lib/utils';
 
-type SubTab = 'banners' | 'templates' | 'contacts' | 'posts' | 'settings';
+type SubTab = 'banners' | 'templates' | 'contacts' | 'posts';
 
 interface WhatsAppTabProps {
   companyId: string;
@@ -63,7 +63,6 @@ export function WhatsAppTab({ companyId }: WhatsAppTabProps) {
         <button className={`tab-button ${activeSubTab === 'templates' ? 'active' : ''}`} onClick={() => setActiveSubTab('templates')}>Templates</button>
         <button className={`tab-button ${activeSubTab === 'contacts' ? 'active' : ''}`} onClick={() => setActiveSubTab('contacts')}>Contatos</button>
         <button className={`tab-button ${activeSubTab === 'posts' ? 'active' : ''}`} onClick={() => setActiveSubTab('posts')}>Postagens</button>
-        <button className={`tab-button ${activeSubTab === 'settings' ? 'active' : ''}`} onClick={() => setActiveSubTab('settings')}>Configuração da API</button>
       </div>
 
       {loading && <p>Carregando dados do WhatsApp...</p>}
@@ -74,7 +73,6 @@ export function WhatsAppTab({ companyId }: WhatsAppTabProps) {
           {activeSubTab === 'templates' && <TemplatesSection templates={templates} />}
           {activeSubTab === 'contacts' && <ContactsSection contacts={contacts} />}
           {activeSubTab === 'posts' && <PostsSection posts={posts} banners={banners} templates={templates} contacts={contacts} />}
-          {activeSubTab === 'settings' && <SettingsSection companyId={companyId} />}
         </div>
       )}
     </div>
@@ -250,41 +248,3 @@ function PostsSection({ posts, banners, templates, contacts }: { posts: WhatsApp
   );
 }
 
-function SettingsSection({ companyId: _companyId }: { companyId: string }) {
-  // TODO: Usar companyId para carregar credenciais específicas da empresa
-  return (
-    <article className="panel warning">
-      <header className="section-header">
-        <div>
-          <h3>Integração com W-API (w-api.io)</h3>
-          <p>Credenciais e status de conexão da API do WhatsApp.</p>
-        </div>
-      </header>
-      
-      <div className="form-grid" style={{ marginTop: 'var(--space-4)' }}>
-        <p style={{ color: 'var(--text-danger)', fontSize: '0.9rem', marginBottom: 'var(--space-3)' }}>
-          A integração real com a API de envios não está implementada nesta fase. Preencha os campos abaixo para preparar a conexão futura.
-        </p>
-
-        <label>
-          API Key (W-API)
-          <input type="password" placeholder="Insira sua chave de API secreta" />
-        </label>
-
-        <label>
-          Instance ID
-          <input type="text" placeholder="ID da sua instância na W-API" />
-        </label>
-
-        <label>
-          Número Conectado (Read-only)
-          <input type="text" disabled placeholder="+55 (00) 00000-0000" />
-        </label>
-
-        <div style={{ marginTop: 'var(--space-2)' }}>
-          <button className="primary" type="button" disabled>Salvar Credenciais</button>
-        </div>
-      </div>
-    </article>
-  );
-}

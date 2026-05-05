@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useAuth } from './hooks/useAuth';
-import { Login } from './components/Login';
+import { Login, WhatsAppTab } from './components';
 import {
   createCompany,
   deleteAudio,
@@ -20,13 +20,14 @@ import {
   uploadAudio,
   uploadImages,
   supabase,
+  getWhatsAppCredentials,
+  saveWhatsAppCredentials,
 } from './lib/supabase';
 import { compressImageFile, formatBytes, getFileName, validateImage, validateAudio } from './lib/utils';
 import { useAudioSettings } from './hooks/useAudioSettings';
 import { useAudioMixer } from './hooks/useAudioMixer';
 import { useActiveImages } from './hooks/useActiveImages';
-import { WhatsAppTab } from './components/WhatsAppTab';
-import type { AudioAsset, Company, ImageAsset, MediaKind, Player } from './types';
+import type { AudioAsset, Company, ImageAsset, MediaKind, Player, WhatsAppCredentials } from './types';
 
 const COMPANY_STORAGE_KEY = 'tv-ads-player-company-id';
 
@@ -147,6 +148,12 @@ function ConfigMode() {
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [previewResolution, setPreviewResolution] = useState<'landscape' | 'portrait' | 'square'>('landscape');
   const [currentlyPlayingMusic, setCurrentlyPlayingMusic] = useState<AudioAsset | null>(null);
+  // WhatsApp Credentials State
+  const [_whatsappCredentials, setWhatsappCredentials] = useState<WhatsAppCredentials | null>(null);
+  const [waApiKey, setWaApiKey] = useState('');
+  const [waInstanceId, setWaInstanceId] = useState('');
+  const [waPhoneNumber, setWaPhoneNumber] = useState('');
+  const [waIsActive, setWaIsActive] = useState(false);
   
   // Audio Settings
   const { settings: audioSettings, updateSettings: setAudioSettings } = useAudioSettings(selectedCompanyId);
@@ -265,6 +272,39 @@ function ConfigMode() {
     return () => clearInterval(intervalId);
   }, [selectedCompanyId]);
 
+  // Carrega credenciais do WhatsApp quando a empresa é selecionada
+  useEffect(() => {
+    if (!selectedCompanyId || !isSupabaseConfigured) {
+      setWhatsappCredentials(null);
+      setWaApiKey('');
+      setWaInstanceId('');
+      setWaPhoneNumber('');
+      setWaIsActive(false);
+      return;
+    }
+
+    const fetchCreds = async () => {
+      try {
+        const creds = await getWhatsAppCredentials(selectedCompanyId);
+        setWhatsappCredentials(creds);
+        if (creds) {
+          setWaApiKey(creds.api_key);
+          setWaInstanceId(creds.instance_id || '');
+          setWaPhoneNumber(creds.phone_number || '');
+          setWaIsActive(creds.is_active);
+        } else {
+          setWaApiKey('');
+          setWaInstanceId('');
+          setWaPhoneNumber('');
+          setWaIsActive(false);
+        }
+      } catch (e) {
+        console.error('Erro ao carregar credenciais do WhatsApp', e);
+      }
+    };
+    void fetchCreds();
+  }, [selectedCompanyId]);
+
   // Limpa o feedback após 3 segundos
   useEffect(() => {
     if (feedback) {
@@ -294,6 +334,32 @@ function ConfigMode() {
       setBusy(false);
     }
   }, [newCompanyName, refreshCompanies]);
+
+  const handleSaveWhatsAppCredentials = useCallback(async () => {
+    if (!selectedCompanyId) {
+      setFeedback('Selecione uma empresa.');
+      return;
+    }
+
+    setBusy(true);
+    setFeedback('');
+
+    try {
+      const saved = await saveWhatsAppCredentials(selectedCompanyId, {
+        provider: 'w-api',
+        api_key: waApiKey,
+        instance_id: waInstanceId,
+        phone_number: waPhoneNumber,
+        is_active: waIsActive,
+      });
+      setWhatsappCredentials(saved);
+      setFeedback('Credenciais do WhatsApp salvas com sucesso!');
+    } catch (error) {
+      setFeedback((error as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }, [selectedCompanyId, waApiKey, waInstanceId, waPhoneNumber, waIsActive]);
 
   const handleUpload = useCallback(
     async (files: FileList | null, kind: 'images' | MediaKind) => {
@@ -750,6 +816,67 @@ function ConfigMode() {
                 ) : (
                   <EmptyState text="Nenhuma TV conectada detectada nos últimos minutos." />
                 )}
+              </article>
+            ) : null}
+
+            {selectedCompany ? (
+              <article className="panel" style={{ marginTop: 'var(--space-4)' }}>
+                <header className="section-header">
+                  <div>
+                    <h3>Configuração WhatsApp (W-API)</h3>
+                    <p>Credenciais e conexão da API do WhatsApp para esta empresa.</p>
+                  </div>
+                </header>
+                <div className="form-grid" style={{ marginTop: 'var(--space-4)' }}>
+                  <label>
+                    API Key (W-API)
+                    <input
+                      type="password"
+                      value={waApiKey}
+                      onChange={(e) => setWaApiKey(e.target.value)}
+                      placeholder="Sua chave secreta da W-API"
+                      disabled={busy}
+                    />
+                  </label>
+                  <label>
+                    Instance ID
+                    <input
+                      type="text"
+                      value={waInstanceId}
+                      onChange={(e) => setWaInstanceId(e.target.value)}
+                      placeholder="ID da instância na W-API"
+                      disabled={busy}
+                    />
+                  </label>
+                  <label>
+                    Número Conectado (Opcional)
+                    <input
+                      type="text"
+                      value={waPhoneNumber}
+                      onChange={(e) => setWaPhoneNumber(e.target.value)}
+                      placeholder="+55 (00) 00000-0000"
+                      disabled={busy}
+                    />
+                  </label>
+                  <label className="checkbox-label" style={{ gridColumn: '1 / -1' }}>
+                    <input
+                      type="checkbox"
+                      checked={waIsActive}
+                      onChange={(e) => setWaIsActive(e.target.checked)}
+                      disabled={busy}
+                    />
+                    <strong>Ativar Integração com WhatsApp</strong>
+                  </label>
+                  <div style={{ marginTop: 'var(--space-2)', display: 'flex', justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      onClick={() => void handleSaveWhatsAppCredentials()}
+                      disabled={busy}
+                    >
+                      Salvar Credenciais
+                    </button>
+                  </div>
+                </div>
               </article>
             ) : null}
           </section>

@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import type { AudioAsset, Company, ImageAsset, MediaKind, Profile, CompanyUsage, UserRole } from '../types';
+import type { AudioAsset, Company, ImageAsset, MediaKind, Profile, CompanyUsage, UserRole, WhatsAppCredentials } from '../types';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -473,4 +473,42 @@ export async function getEnterpriseProfile(userId: string) {
     created_at: profileData?.created_at || new Date().toISOString(),
     updated_at: profileData?.updated_at || new Date().toISOString()
   };
+}
+
+// WhatsApp Credentials
+export async function getWhatsAppCredentials(companyId: string): Promise<WhatsAppCredentials | null> {
+  const client = assertSupabase();
+  const { data, error } = await client
+    .from('whatsapp_credentials')
+    .select('*')
+    .eq('company_id', companyId)
+    .maybeSingle();
+
+  if (error && error.code !== 'PGRST116') {
+    throw error;
+  }
+  return data as WhatsAppCredentials | null;
+}
+
+export async function saveWhatsAppCredentials(
+  companyId: string,
+  credentials: Partial<WhatsAppCredentials>
+): Promise<WhatsAppCredentials> {
+  const client = assertSupabase();
+  
+  // Try to upsert
+  const { data, error } = await client
+    .from('whatsapp_credentials')
+    .upsert({
+      company_id: companyId,
+      ...credentials,
+      updated_at: new Date().toISOString()
+    }, { onConflict: 'company_id' })
+    .select('*')
+    .single();
+
+  if (error) {
+    throw error;
+  }
+  return data as WhatsAppCredentials;
 }
