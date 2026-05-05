@@ -8,10 +8,70 @@ export function useAudioMixer(music: AudioAsset[], voiceovers: AudioAsset[], set
   
   const musicQueueRef = useRef<AudioAsset[]>([]);
   const voiceQueueRef = useRef<AudioAsset[]>([]);
+  const volumeFadeIntervalRef = useRef<number | null>(null);
+  const voiceoverTickerRef = useRef<number | null>(null);
+  const elapsedMusicMsRef = useRef(0);
+  const isVoiceoverPlayingRef = useRef(false);
   
   // Estado estrito da fila sequencial
   const isPlayingRef = useRef(false);
+  const isMusicPlayingRef = useRef(false);
   const failCountRef = useRef(0);
+
+  const clearVolumeFade = useCallback(() => {
+    if (volumeFadeIntervalRef.current !== null) {
+      window.clearInterval(volumeFadeIntervalRef.current);
+      volumeFadeIntervalRef.current = null;
+    }
+  }, []);
+
+  const fadeMusicVolume = useCallback((targetVolume: number, durationSeconds: number) => {
+    const player = musicPlayerRef.current;
+    if (!player) return;
+
+    clearVolumeFade();
+
+    if (durationSeconds <= 0) {
+      player.volume = targetVolume;
+      return;
+    }
+
+    const startVolume = player.volume;
+    const stepMs = 50;
+    const totalSteps = Math.max(1, Math.ceil((durationSeconds * 1000) / stepMs));
+    let step = 0;
+
+    volumeFadeIntervalRef.current = window.setInterval(() => {
+      step += 1;
+      const progress = Math.min(step / totalSteps, 1);
+      player.volume = startVolume + (targetVolume - startVolume) * progress;
+
+      if (progress >= 1) {
+        clearVolumeFade();
+      }
+    }, stepMs);
+  }, [clearVolumeFade]);
+
+  const startVoiceoverTicker = useCallback(() => {
+    if (voiceoverTickerRef.current !== null) return;
+
+    voiceoverTickerRef.current = window.setInterval(() => {
+      if (!isMusicPlayingRef.current || isVoiceoverPlayingRef.current) return;
+
+      elapsedMusicMsRef.current += 1000;
+      if (elapsedMusicMsRef.current < 120000) return;
+
+      elapsedMusicMsRef.current = 0;
+      void startVoiceover();
+    }, 1000);
+  }, []);
+
+  const stopVoiceoverTicker = useCallback(() => {
+    if (voiceoverTickerRef.current !== null) {
+      window.clearInterval(voiceoverTickerRef.current);
+      voiceoverTickerRef.current = null;
+    }
+  }, []);
 
   const playNextMusic = useCallback(async () => {
     if (music.length === 0) return;
@@ -35,13 +95,14 @@ export function useAudioMixer(music: AudioAsset[], voiceovers: AudioAsset[], set
     musicPlayer.onended = () => {
       console.log(`[Audio Mixer] Música finalizada: ${getFileName(nextMusic.file_url)}`);
       failCountRef.current = 0;
-      // Inicia a locução correspondente após o fim da música
-      void startVoiceover();
+      isMusicPlayingRef.current = false;
+      void playNextMusic();
     };
 
     musicPlayer.onerror = () => {
       console.error(`[Audio Mixer] Erro na música: ${getFileName(nextMusic.file_url)}`);
       failCountRef.current++;
+      isMusicPlayingRef.current = false;
       if (failCountRef.current < 5) {
         setTimeout(() => void playNextMusic(), 1000);
       } else {
@@ -53,19 +114,23 @@ export function useAudioMixer(music: AudioAsset[], voiceovers: AudioAsset[], set
       console.log(`[Audio Mixer] Iniciando música: ${getFileName(nextMusic.file_url)}`);
       await musicPlayer.play();
       isPlayingRef.current = true;
+      isMusicPlayingRef.current = true;
+      startVoiceoverTicker();
     } catch (err) {
       console.error('[Audio Mixer] Falha ao tentar reproduzir música:', err);
       failCountRef.current++;
+      isMusicPlayingRef.current = false;
       if (failCountRef.current < 5) {
         setTimeout(() => void playNextMusic(), 1000);
       }
     }
-  }, [music, settings.musicBaseVolume]);
+  }, [music, settings.musicBaseVolume, startVoiceoverTicker]);
 
   const startVoiceover = useCallback(async () => {
+    if (isVoiceoverPlayingRef.current) return;
+
     // Se não houver locuções, avança para a próxima música imediatamente
     if (voiceovers.length === 0) {
-      void playNextMusic();
       return;
     }
 
@@ -89,10 +154,14 @@ export function useAudioMixer(music: AudioAsset[], voiceovers: AudioAsset[], set
     voicePlayer.onended = null;
     voicePlayer.onerror = null;
 
+    isVoiceoverPlayingRef.current = true;
+    fadeMusicVolume(settings.musicDuckedVolume, settings.duckingFadeOutTime);
+
     const restoreMusic = () => {
-      console.log(`[Audio Mixer] Locução finalizada. Retornando ao ciclo (Música)`);
+      console.log('[Audio Mixer] Locução finalizada. Restaurando volume da música.');
+      isVoiceoverPlayingRef.current = false;
       failCountRef.current = 0;
-      void playNextMusic();
+      fadeMusicVolume(settings.musicBaseVolume, settings.duckingFadeInTime);
     };
 
     voicePlayer.onended = restoreMusic;
@@ -113,11 +182,21 @@ export function useAudioMixer(music: AudioAsset[], voiceovers: AudioAsset[], set
     } catch (err) {
       console.error('[Audio Mixer] Falha ao tocar locução:', err);
       failCountRef.current++;
+      isVoiceoverPlayingRef.current = false;
+      fadeMusicVolume(settings.musicBaseVolume, settings.duckingFadeInTime);
       if (failCountRef.current < 5) {
-        restoreMusic();
+        // Mantém ciclo de música e aguarda próximo intervalo para nova tentativa.
       }
     }
-  }, [voiceovers, settings.voiceoverVolume, playNextMusic]);
+  }, [
+    voiceovers,
+    settings.voiceoverVolume,
+    settings.musicDuckedVolume,
+    settings.musicBaseVolume,
+    settings.duckingFadeOutTime,
+    settings.duckingFadeInTime,
+    fadeMusicVolume
+  ]);
 
   // Efeito de inicialização estrita: Começa o ciclo (Música)
   useEffect(() => {
@@ -132,6 +211,10 @@ export function useAudioMixer(music: AudioAsset[], voiceovers: AudioAsset[], set
 
     return () => {
       isPlayingRef.current = false;
+      isMusicPlayingRef.current = false;
+      isVoiceoverPlayingRef.current = false;
+      stopVoiceoverTicker();
+      clearVolumeFade();
       if (musicPlayerRef.current) {
         musicPlayerRef.current.pause();
         musicPlayerRef.current.src = '';
@@ -141,7 +224,7 @@ export function useAudioMixer(music: AudioAsset[], voiceovers: AudioAsset[], set
         voicePlayerRef.current.src = '';
       }
     };
-  }, [music, voiceovers, playNextMusic]);
+  }, [music, voiceovers, playNextMusic, stopVoiceoverTicker, clearVolumeFade]);
 
   return { musicPlayerRef, voicePlayerRef };
 }
