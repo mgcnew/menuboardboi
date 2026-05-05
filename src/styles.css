@@ -75,13 +75,98 @@ button, input, select {
 }
 
 /* Layout */
+.app-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 64px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-default);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--space-4);
+  z-index: 100;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.topbar-brand h1 {
+  font-size: 1.25rem;
+  letter-spacing: -0.02em;
+  margin: 0;
+  font-weight: 700;
+}
+
+.topbar-nav {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  gap: var(--space-2);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.topbar-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.topbar-tab {
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--space-3);
+  background: transparent;
+  color: var(--text-secondary);
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  font-size: 0.95rem;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.topbar-tab:hover:not(:disabled) {
+  color: var(--text-primary);
+}
+
+.topbar-tab[aria-selected="true"] {
+  color: var(--border-focus);
+  border-bottom-color: var(--border-focus);
+}
+
+.topbar-tab:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .shell {
-  max-width: 1024px;
-  margin: 0 auto;
+  max-width: 1200px;
+  margin: 64px auto 0;
   padding: var(--space-5) var(--space-4);
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
+  width: 100%;
 }
 
 /* Header & Hero */
@@ -924,8 +1009,32 @@ button.danger:hover {
 
 /* Responsive */
 @media (max-width: 768px) {
+  .topbar {
+    flex-direction: column;
+    height: auto;
+    padding: var(--space-2) var(--space-3) 0;
+    gap: var(--space-2);
+  }
+  
+  .topbar-brand {
+    width: 100%;
+    justify-content: space-between;
+  }
+  
+  .topbar-nav {
+    width: 100%;
+    justify-content: flex-start;
+    height: 40px;
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .topbar-actions {
+    display: none; /* Can be handled via a mobile menu or kept minimal */
+  }
+
   .shell {
-    padding: var(--space-3);
+    margin-top: 90px;
+    padding: var(--space-4) var(--space-3);
     gap: var(--space-4);
   }
 

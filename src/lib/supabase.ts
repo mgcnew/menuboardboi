@@ -595,11 +595,17 @@ export async function listWhatsAppTemplates(companyId: string): Promise<WhatsApp
   return data as WhatsAppPostTemplate[];
 }
 
-export async function createWhatsAppTemplate(companyId: string, name: string, message_text: string): Promise<WhatsAppPostTemplate> {
+export async function createWhatsAppTemplate(
+  companyId: string, 
+  name: string, 
+  message_text: string,
+  category?: string,
+  is_status_template: boolean = false
+): Promise<WhatsAppPostTemplate> {
   const client = assertSupabase();
   const { data, error } = await client
     .from('whatsapp_post_templates')
-    .insert({ company_id: companyId, name, message_text })
+    .insert({ company_id: companyId, name, message_text, category, is_status_template })
     .select('*')
     .single();
 
@@ -607,11 +613,17 @@ export async function createWhatsAppTemplate(companyId: string, name: string, me
   return data as WhatsAppPostTemplate;
 }
 
-export async function updateWhatsAppTemplate(templateId: string, name: string, message_text: string): Promise<WhatsAppPostTemplate> {
+export async function updateWhatsAppTemplate(
+  templateId: string, 
+  name: string, 
+  message_text: string,
+  category?: string,
+  is_status_template: boolean = false
+): Promise<WhatsAppPostTemplate> {
   const client = assertSupabase();
   const { data, error } = await client
     .from('whatsapp_post_templates')
-    .update({ name, message_text })
+    .update({ name, message_text, category, is_status_template })
     .eq('id', templateId)
     .select('*')
     .single();

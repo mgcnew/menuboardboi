@@ -42,7 +42,7 @@ describe('WhatsAppTab - Contacts', () => {
 
   it('handles contact search and creation', async () => {
     const mockContacts = [
-      { id: '1', company_id: 'test-company', name: 'João', phone_numbers: ['5511999999999'], segment: 'VIP', created_at: '' },
+      { id: '1', company_id: 'test-company', name: 'João', phone_numbers: ['5511999999999'], segment: 'VIP', created_at: '', total_purchases: 0, total_spent: 0, has_opted_out: false },
     ];
     
     vi.mocked(supabaseLib.listWhatsAppContacts).mockResolvedValue(mockContacts);
@@ -89,7 +89,7 @@ describe('WhatsAppTab - Posts', () => {
 
   it('can create a new post with custom message', async () => {
     const mockContacts = [
-      { id: '1', company_id: 'test-company', name: 'João', phone_numbers: ['5511999999999'], created_at: '' },
+      { id: '1', company_id: 'test-company', name: 'João', phone_numbers: ['5511999999999'], created_at: '', total_purchases: 0, total_spent: 0, has_opted_out: false },
     ];
     
     vi.mocked(supabaseLib.listWhatsAppContacts).mockResolvedValue(mockContacts);
@@ -183,7 +183,7 @@ describe('WhatsAppTab - Templates', () => {
 
   it('handles template search and variables', async () => {
     const mockTemplates = [
-      { id: '1', company_id: 'test-company', name: 'Oferta', message_text: 'Olá {nome}', created_at: '' },
+      { id: '1', company_id: 'test-company', name: 'Oferta', message_text: 'Olá {nome}', created_at: '', is_status_template: false },
     ];
     
     vi.mocked(supabaseLib.listWhatsAppTemplates).mockResolvedValue(mockTemplates);
@@ -220,7 +220,7 @@ describe('WhatsAppTab - Templates', () => {
 
   it('can open template form and save new template', async () => {
     vi.mocked(supabaseLib.listWhatsAppTemplates).mockResolvedValue([]);
-    vi.mocked(supabaseLib.createWhatsAppTemplate).mockResolvedValue({ id: '2', company_id: 'test-company', name: 'New', message_text: 'Test', created_at: '' });
+    vi.mocked(supabaseLib.createWhatsAppTemplate).mockResolvedValue({ id: '2', company_id: 'test-company', name: 'New', message_text: 'Test', created_at: '', is_status_template: false });
 
     render(<WhatsAppTab companyId="test-company" />);
 

@@ -571,17 +571,83 @@ function ConfigMode() {
   }, [handleNextPreview, handlePrevPreview, previewImage]);
 
   return (
-    <div className="shell">
-      <header className="hero">
-        <div>
-          <span className="eyebrow">Painel Administrativo</span>
+    <div className="app-container">
+      <header className="topbar">
+        <div className="topbar-brand">
           <h1>TV Ads Player</h1>
-          <p>
-            Gerencie o conteúdo de mídia e controle as configurações de exibição de forma centralizada.
-          </p>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', alignItems: 'flex-end' }}>
-          <button onClick={() => void signOut()} className="secondary">Sair do Sistema</button>
+
+        <nav className="topbar-nav" aria-label="Navegação Principal">
+          {(isMasterAdmin || profile?.role === 'master_admin') && (
+            <button
+              role="tab"
+              className="topbar-tab"
+              aria-selected={activeTab === 'company'}
+              aria-controls="panel-company"
+              id="tab-company"
+              onClick={() => setActiveTab('company')}
+            >
+              Empresa
+            </button>
+          )}
+          <button
+            role="tab"
+            className="topbar-tab"
+            aria-selected={activeTab === 'media'}
+            aria-controls="panel-media"
+            id="tab-media"
+            onClick={() => setActiveTab('media')}
+            disabled={(isMasterAdmin || profile?.role === 'master_admin') && !selectedCompanyId}
+          >
+            Configurações
+          </button>
+          <button
+            role="tab"
+            className="topbar-tab"
+            aria-selected={activeTab === 'images'}
+            aria-controls="panel-images"
+            id="tab-images"
+            onClick={() => setActiveTab('images')}
+            disabled={(isMasterAdmin || profile?.role === 'master_admin') && !selectedCompanyId}
+          >
+            Fotos
+          </button>
+          <button
+            role="tab"
+            className="topbar-tab"
+            aria-selected={activeTab === 'music'}
+            aria-controls="panel-music"
+            id="tab-music"
+            onClick={() => setActiveTab('music')}
+            disabled={(isMasterAdmin || profile?.role === 'master_admin') && !selectedCompanyId}
+          >
+            Músicas
+          </button>
+          <button
+            role="tab"
+            className="topbar-tab"
+            aria-selected={activeTab === 'voiceovers'}
+            aria-controls="panel-voiceovers"
+            id="tab-voiceovers"
+            onClick={() => setActiveTab('voiceovers')}
+            disabled={(isMasterAdmin || profile?.role === 'master_admin') && !selectedCompanyId}
+          >
+            Locuções
+          </button>
+          <button
+            role="tab"
+            className="topbar-tab"
+            aria-selected={activeTab === 'whatsapp'}
+            aria-controls="panel-whatsapp"
+            id="tab-whatsapp"
+            onClick={() => setActiveTab('whatsapp')}
+            disabled={(isMasterAdmin || profile?.role === 'master_admin') && !selectedCompanyId}
+          >
+            WhatsApp
+          </button>
+        </nav>
+
+        <div className="topbar-actions">
           {selectedCompanyId ? (
             <a
               className="primary-link"
@@ -590,113 +656,46 @@ function ConfigMode() {
               rel="noreferrer"
               aria-label={`Abrir modo TV para a empresa ${selectedCompany?.name ?? ''}`}
             >
-              Iniciar Exibição TV
+              Exibir TV
             </a>
           ) : null}
+          <button onClick={() => void signOut()} className="secondary">Sair</button>
         </div>
       </header>
 
-      {!isSupabaseConfigured ? (
-        <section className="panel warning" aria-live="polite">
-          <h2>Supabase não configurado</h2>
-          <p>
-            As credenciais do banco de dados não foram detectadas. Por favor, preencha o arquivo <code>.env</code>.
-          </p>
-        </section>
-      ) : null}
+      <div className="shell">
+        {!isSupabaseConfigured ? (
+          <section className="panel warning" aria-live="polite">
+            <h2>Supabase não configurado</h2>
+            <p>
+              As credenciais do banco de dados não foram detectadas. Por favor, preencha o arquivo <code>.env</code>.
+            </p>
+          </section>
+        ) : null}
 
-      <nav className="breadcrumb" aria-label="Breadcrumb">
-        <span>Painel {(isMasterAdmin || profile?.role === 'master_admin') ? 'Master' : 'da Empresa'}</span> / 
-        <span>{selectedCompany ? selectedCompany.name : ((isMasterAdmin || profile?.role === 'master_admin') ? 'Selecionar Empresa' : 'Carregando...')}</span> / 
-        <span>
-          {activeTab === 'company' && ' Empresa'}
-          {activeTab === 'media' && ' Configurações de Mídia'}
-          {activeTab === 'images' && ' Fotos Promocionais'}
-          {activeTab === 'music' && ' Trilha Sonora'}
-          {activeTab === 'voiceovers' && ' Locuções'}
-        </span>
-      </nav>
+        <nav className="breadcrumb" aria-label="Breadcrumb">
+          <span>Painel {(isMasterAdmin || profile?.role === 'master_admin') ? 'Master' : 'da Empresa'}</span> / 
+          <span>{selectedCompany ? selectedCompany.name : ((isMasterAdmin || profile?.role === 'master_admin') ? 'Selecionar Empresa' : 'Carregando...')}</span> / 
+          <span>
+            {activeTab === 'company' && ' Empresa'}
+            {activeTab === 'media' && ' Configurações'}
+            {activeTab === 'images' && ' Fotos'}
+            {activeTab === 'music' && ' Músicas'}
+            {activeTab === 'voiceovers' && ' Locuções'}
+            {activeTab === 'whatsapp' && ' WhatsApp'}
+          </span>
+        </nav>
 
-      <div role="tablist" className="tabs-list" aria-label="Navegação Principal">
-        {(isMasterAdmin || profile?.role === 'master_admin') && (
-          <button
-            role="tab"
-            className="tab-button"
-            aria-selected={activeTab === 'company'}
-            aria-controls="panel-company"
-            id="tab-company"
-            onClick={() => setActiveTab('company')}
-          >
-            Empresa
-          </button>
-        )}
-        <button
-          role="tab"
-          className="tab-button"
-          aria-selected={activeTab === 'media'}
-          aria-controls="panel-media"
-          id="tab-media"
-          onClick={() => setActiveTab('media')}
-          disabled={(isMasterAdmin || profile?.role === 'master_admin') && !selectedCompanyId}
-        >
-          Configurações de Mídia
-        </button>
-        <button
-          role="tab"
-          className="tab-button"
-          aria-selected={activeTab === 'images'}
-          aria-controls="panel-images"
-          id="tab-images"
-          onClick={() => setActiveTab('images')}
-          disabled={(isMasterAdmin || profile?.role === 'master_admin') && !selectedCompanyId}
-        >
-          Fotos
-        </button>
-        <button
-          role="tab"
-          className="tab-button"
-          aria-selected={activeTab === 'music'}
-          aria-controls="panel-music"
-          id="tab-music"
-          onClick={() => setActiveTab('music')}
-          disabled={(isMasterAdmin || profile?.role === 'master_admin') && !selectedCompanyId}
-        >
-          Músicas
-        </button>
-        <button
-          role="tab"
-          className="tab-button"
-          aria-selected={activeTab === 'voiceovers'}
-          aria-controls="panel-voiceovers"
-          id="tab-voiceovers"
-          onClick={() => setActiveTab('voiceovers')}
-          disabled={(isMasterAdmin || profile?.role === 'master_admin') && !selectedCompanyId}
-        >
-          Locuções
-        </button>
-        <button
-          role="tab"
-          className="tab-button"
-          aria-selected={activeTab === 'whatsapp'}
-          aria-controls="panel-whatsapp"
-          id="tab-whatsapp"
-          onClick={() => setActiveTab('whatsapp')}
-          disabled={(isMasterAdmin || profile?.role === 'master_admin') && !selectedCompanyId}
-        >
-          WhatsApp
-        </button>
-      </div>
-
-      <main>
-        {/* Aba: Empresa (apenas master admin) */}
-        {(isMasterAdmin || profile?.role === 'master_admin') && (
-          <section
-            id="panel-company"
-            role="tabpanel"
-            aria-labelledby="tab-company"
-            className="tab-panel panel"
-            hidden={activeTab !== 'company'}
-          >
+        <main>
+          {/* Aba: Empresa (apenas master admin) */}
+          {(isMasterAdmin || profile?.role === 'master_admin') && (
+            <section
+              id="panel-company"
+              role="tabpanel"
+              aria-labelledby="tab-company"
+              className="tab-panel panel"
+              hidden={activeTab !== 'company'}
+            >
             <header className="section-header">
               <div>
                 <h2>Empresas</h2>
@@ -1431,6 +1430,7 @@ function ConfigMode() {
           {feedback}
         </div>
       ) : null}
+      </div>
     </div>
   );
 }
