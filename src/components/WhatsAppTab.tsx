@@ -334,10 +334,20 @@ function TemplatesSection({ companyId, templates, onReload }: { companyId: strin
   const [currentTemplate, setCurrentTemplate] = useState<Partial<WhatsAppPostTemplate> | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const insertVariable = (variable: string) => {
+    if (currentTemplate) {
+      setCurrentTemplate({
+        ...currentTemplate,
+        message_text: (currentTemplate.message_text || '') + variable
+      });
+    }
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentTemplate?.name || !currentTemplate?.message_text) {
+    if (!currentTemplate?.name?.trim() || !currentTemplate?.message_text?.trim()) {
       alert('Preencha o nome e a mensagem do template.');
       return;
     }
@@ -362,12 +372,15 @@ function TemplatesSection({ companyId, templates, onReload }: { companyId: strin
 
   const handleDelete = async (templateId: string) => {
     if (!confirm('Tem certeza que deseja excluir este template?')) return;
+    setDeletingId(templateId);
     try {
       await deleteWhatsAppTemplate(templateId);
       onReload();
     } catch (error) {
       console.error('Error deleting template:', error);
       alert('Erro ao excluir template.');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -381,11 +394,11 @@ function TemplatesSection({ companyId, templates, onReload }: { companyId: strin
       <header className="section-header">
         <div>
           <h3>Templates de Mensagens</h3>
-          <p>Textos pré-definidos para agilizar a criação de campanhas. Use {"{nome}"} para inserir o nome do contato.</p>
+          <p>Textos pré-definidos para agilizar a criação de campanhas. Use variáveis dinâmicas para personalizar.</p>
         </div>
         <button 
           className="primary" 
-          onClick={() => { setIsEditing(true); setCurrentTemplate({}); }}
+          onClick={() => { setIsEditing(true); setCurrentTemplate({ name: '', message_text: '' }); }}
           disabled={isEditing}
         >
           + Novo Template
@@ -408,55 +421,108 @@ function TemplatesSection({ companyId, templates, onReload }: { companyId: strin
           </label>
 
           <label>
-            Texto da Mensagem (Use {"{nome}"} para variáveis)
+            Texto da Mensagem
+            <div style={{ marginBottom: '0.5rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <button type="button" className="secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }} onClick={() => insertVariable('{nome}')}>+ Nome</button>
+              <button type="button" className="secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }} onClick={() => insertVariable('{saudacao}')}>+ Saudação (Bom dia/tarde)</button>
+              <button type="button" className="secondary" style={{ padding: '0.25rem 0.5rem', fontSize: '0.8rem' }} onClick={() => insertVariable('{empresa}')}>+ Nome da Empresa</button>
+            </div>
             <textarea 
-              rows={4} 
+              rows={6} 
               placeholder="Olá {nome}! Temos uma oferta especial..." 
               value={currentTemplate?.message_text || ''}
               onChange={e => setCurrentTemplate({ ...currentTemplate, message_text: e.target.value })}
               disabled={isSaving}
+              style={{ fontFamily: 'inherit' }}
             />
           </label>
           
-          <div style={{ padding: '0.5rem', background: 'var(--bg-body)', border: '1px dashed var(--border-default)', borderRadius: '4px', fontSize: '0.85rem' }}>
-            <strong>Preview:</strong><br/>
-            {currentTemplate?.message_text ? currentTemplate.message_text.replace(/\{nome\}/g, 'João') : 'Nenhuma mensagem informada.'}
+          <div style={{ padding: '1rem', background: 'var(--bg-body)', border: '1px dashed var(--border-default)', borderRadius: '4px', fontSize: '0.9rem' }}>
+            <strong style={{ display: 'block', marginBottom: '0.5rem', color: 'var(--text-muted)' }}>Preview (Simulação):</strong>
+            <div style={{ whiteSpace: 'pre-wrap' }}>
+              {currentTemplate?.message_text 
+                ? currentTemplate.message_text
+                    .replace(/\{nome\}/g, 'João da Silva')
+                    .replace(/\{saudacao\}/g, 'Boa tarde')
+                    .replace(/\{empresa\}/g, 'Sua Empresa') 
+                : <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Nenhuma mensagem informada.</span>}
+            </div>
           </div>
 
           <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-2)' }}>
             <button type="submit" className="primary" disabled={isSaving}>
               {isSaving ? 'Salvando...' : 'Salvar Template'}
             </button>
-            <button type="button" className="secondary" onClick={() => setIsEditing(false)} disabled={isSaving}>
+            <button type="button" className="secondary" onClick={() => { setIsEditing(false); setCurrentTemplate(null); }} disabled={isSaving}>
               Cancelar
             </button>
           </div>
         </form>
       )}
 
-      <div style={{ marginTop: 'var(--space-4)' }}>
+      <div style={{ marginTop: 'var(--space-4)', position: 'relative' }}>
         <input 
           type="text" 
-          placeholder="Buscar templates..." 
+          placeholder="Buscar templates por nome ou conteúdo..." 
           value={searchTerm}
           onChange={e => setSearchTerm(e.target.value)}
-          style={{ width: '100%', marginBottom: 'var(--space-4)' }}
+          style={{ width: '100%', marginBottom: 'var(--space-4)', paddingRight: '2rem' }}
         />
+        {searchTerm && (
+          <button 
+            type="button"
+            onClick={() => setSearchTerm('')}
+            style={{ position: 'absolute', right: '0.5rem', top: '0.5rem', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+          >
+            ✕
+          </button>
+        )}
       </div>
 
       <ul className="asset-list">
         {filteredTemplates.length === 0 ? (
-          <p className="empty-state">Nenhum template encontrado.</p>
+          <p className="empty-state">
+            {searchTerm ? 'Nenhum template encontrado para sua busca.' : 'Nenhum template cadastrado.'}
+          </p>
         ) : (
           filteredTemplates.map(tpl => (
-            <li key={tpl.id} className="asset-row">
-              <div className="asset-copy">
-                <strong>{tpl.name}</strong>
-                <p style={{ fontSize: '0.85rem', marginTop: '4px', whiteSpace: 'pre-wrap' }}>{tpl.message_text}</p>
+            <li key={tpl.id} className="asset-row" style={{ alignItems: 'flex-start' }}>
+              <div className="asset-copy" style={{ flex: 1 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <strong>{tpl.name}</strong>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    {new Date(tpl.created_at).toLocaleDateString('pt-BR')}
+                  </span>
+                </div>
+                <div style={{ 
+                  fontSize: '0.85rem', 
+                  marginTop: '0.5rem', 
+                  whiteSpace: 'pre-wrap',
+                  background: 'var(--bg-subtle)',
+                  padding: '0.5rem',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--border-subtle)'
+                }}>
+                  {tpl.message_text}
+                </div>
               </div>
-              <div className="asset-actions">
-                <button type="button" className="secondary" onClick={() => { setIsEditing(true); setCurrentTemplate(tpl); }}>Editar</button>
-                <button type="button" className="danger" onClick={() => handleDelete(tpl.id)}>Excluir</button>
+              <div className="asset-actions" style={{ marginLeft: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                <button 
+                  type="button" 
+                  className="secondary" 
+                  onClick={() => { setIsEditing(true); setCurrentTemplate(tpl); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                  disabled={isEditing}
+                >
+                  Editar
+                </button>
+                <button 
+                  type="button" 
+                  className="danger" 
+                  onClick={() => handleDelete(tpl.id)}
+                  disabled={deletingId === tpl.id || isEditing}
+                >
+                  {deletingId === tpl.id ? '...' : 'Excluir'}
+                </button>
               </div>
             </li>
           ))

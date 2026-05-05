@@ -80,7 +80,7 @@ describe('WhatsAppTab - Templates', () => {
     vi.clearAllMocks();
   });
 
-  it('loads and displays templates', async () => {
+  it('handles template search and variables', async () => {
     const mockTemplates = [
       { id: '1', company_id: 'test-company', name: 'Oferta', message_text: 'Olá {nome}', created_at: '' },
     ];
@@ -99,7 +99,22 @@ describe('WhatsAppTab - Templates', () => {
       expect(screen.queryByText('Oferta')).not.toBeNull();
     });
 
-    expect(screen.queryByText('Olá {nome}')).not.toBeNull();
+    // Test Search
+    const searchInput = screen.getByPlaceholderText('Buscar templates por nome ou conteúdo...');
+    fireEvent.change(searchInput, { target: { value: 'Inexistente' } });
+    expect(screen.queryByText('Oferta')).toBeNull();
+
+    fireEvent.change(searchInput, { target: { value: 'Oferta' } });
+    expect(screen.queryByText('Oferta')).not.toBeNull();
+
+    // Test New Template and Variables
+    fireEvent.click(screen.getByText('+ Novo Template'));
+    
+    const varButton = screen.getByText('+ Nome');
+    fireEvent.click(varButton);
+    
+    const textarea = screen.getByPlaceholderText('Olá {nome}! Temos uma oferta especial...') as HTMLTextAreaElement;
+    expect(textarea.value).toContain('{nome}');
   });
 
   it('can open template form and save new template', async () => {
