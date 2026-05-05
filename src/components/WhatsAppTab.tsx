@@ -15,7 +15,10 @@ import {
   createWhatsAppContact,
   updateWhatsAppContact,
   deleteWhatsAppContact,
-  importWhatsAppContacts
+  importWhatsAppContacts,
+  listWhatsAppPosts,
+  createWhatsAppPost,
+  cancelWhatsAppPost
 } from '../lib/supabase';
 import { formatBytes } from '../lib/utils';
 import * as XLSX from 'xlsx';
@@ -46,7 +49,7 @@ export function WhatsAppTab({ companyId }: WhatsAppTabProps) {
         listWhatsAppBanners(companyId).then(data => ({ data, error: null })).catch(error => ({ data: null, error })),
         listWhatsAppTemplates(companyId).then(data => ({ data, error: null })).catch(error => ({ data: null, error })),
         listWhatsAppContacts(companyId).then(data => ({ data, error: null })).catch(error => ({ data: null, error })),
-        supabase.from('whatsapp_posts').select('*').eq('company_id', companyId).order('created_at', { ascending: false })
+        listWhatsAppPosts(companyId).then(data => ({ data, error: null })).catch(error => ({ data: null, error }))
       ]);
 
       if (resBanners.data) setBanners(resBanners.data as WhatsAppBanner[]);
@@ -88,6 +91,15 @@ export function WhatsAppTab({ companyId }: WhatsAppTabProps) {
     }
   }, [companyId]);
 
+  const reloadPosts = useCallback(async () => {
+    try {
+      const data = await listWhatsAppPosts(companyId);
+      setPosts(data);
+    } catch (err) {
+      console.error('Failed to reload posts', err);
+    }
+  }, [companyId]);
+
   useEffect(() => {
     void loadData();
   }, [loadData]);
@@ -115,7 +127,7 @@ export function WhatsAppTab({ companyId }: WhatsAppTabProps) {
           {activeSubTab === 'banners' && <BannersSection companyId={companyId} banners={banners} onReload={reloadBanners} />}
           {activeSubTab === 'templates' && <TemplatesSection companyId={companyId} templates={templates} onReload={reloadTemplates} />}
           {activeSubTab === 'contacts' && <ContactsSection companyId={companyId} contacts={contacts} onReload={reloadContacts} />}
-          {activeSubTab === 'posts' && <PostsSection posts={posts} banners={banners} templates={templates} contacts={contacts} />}
+          {activeSubTab === 'posts' && <PostsSection companyId={companyId} posts={posts} banners={banners} templates={templates} contacts={contacts} onReload={reloadPosts} />}
         </div>
       )}
     </div>
@@ -836,8 +848,92 @@ function ContactsSection({ companyId, contacts, onReload }: { companyId: string,
   );
 }
 
-function PostsSection({ posts, banners, templates, contacts }: { posts: WhatsAppPost[], banners: WhatsAppBanner[], templates: WhatsAppPostTemplate[], contacts: WhatsAppContact[] }) {
+function PostsSection({ companyId, posts, banners, templates, contacts, onReload }: { companyId: string, posts: WhatsAppPost[], banners: WhatsAppBanner[], templates: WhatsAppPostTemplate[], contacts: WhatsAppContact[], onReload: () => void }) {
   const [showForm, setShowForm] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+
+  // Form State
+  const [selectedBanner, setSelectedBanner] = useState('');
+  const [selectedTemplate, setSelectedTemplate] = useState('');
+  const [messageText, setMessageText] = useState('');
+  const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
+  const [scheduledAt, setScheduledAt] = useState('');
+
+  const activeBanners = banners.filter(b => b.is_active);
+
+  const resetForm = () => {
+    setShowForm(false);
+    setSelectedBanner('');
+    setSelectedTemplate('');
+    setMessageText('');
+    setSelectedContacts([]);
+    setScheduledAt('');
+  };
+
+  const handleContactToggle = (contactId: string) => {
+    setSelectedContacts(prev => 
+      prev.includes(contactId) 
+        ? prev.filter(id => id !== contactId)
+        : [...prev, contactId]
+    );
+  };
+
+  const handleSelectAllContacts = () => {
+    if (selectedContacts.length === contacts.length) {
+      setSelectedContacts([]); // Deselect all
+    } else {
+      setSelectedContacts(contacts.map(c => c.id)); // Select all
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (selectedContacts.length === 0) {
+      alert('Selecione pelo menos um contato/destinatário.');
+      return;
+    }
+
+    if (!selectedTemplate && !messageText.trim() && !selectedBanner) {
+      alert('Você precisa enviar uma mensagem, um template ou um banner.');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      await createWhatsAppPost(companyId, {
+        banner_id: selectedBanner || null,
+        template_id: selectedTemplate || null,
+        message_text: selectedTemplate ? null : messageText, // If template is selected, ignore custom text
+        recipient_ids: selectedContacts,
+        scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : null
+      });
+      
+      alert('Postagem/Campanha criada com sucesso!');
+      onReload();
+      resetForm();
+    } catch (error) {
+      console.error('Error creating post:', error);
+      alert('Erro ao criar postagem.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleCancel = async (postId: string) => {
+    if (!confirm('Tem certeza que deseja cancelar o envio desta postagem?')) return;
+    setCancellingId(postId);
+    try {
+      await cancelWhatsAppPost(postId);
+      onReload();
+    } catch (error) {
+      console.error('Error cancelling post:', error);
+      alert('Erro ao cancelar postagem.');
+    } finally {
+      setCancellingId(null);
+    }
+  };
 
   return (
     <article className="panel">
@@ -846,50 +942,103 @@ function PostsSection({ posts, banners, templates, contacts }: { posts: WhatsApp
           <h3>Histórico e Agendamentos</h3>
           <p>Postagens enviadas e programadas para envio.</p>
         </div>
-        <button className="primary" onClick={() => setShowForm(!showForm)}>
-          {showForm ? 'Cancelar Agendamento' : '+ Nova Postagem'}
+        <button className="primary" onClick={() => showForm ? resetForm() : setShowForm(true)} disabled={isSaving}>
+          {showForm ? 'Cancelar' : '+ Nova Postagem'}
         </button>
       </header>
 
       {showForm && (
-        <form className="form-grid" style={{ background: 'var(--bg-subtle)', padding: 'var(--space-4)', borderRadius: 'var(--radius-md)', marginBottom: 'var(--space-4)', border: '1px solid var(--border-default)' }} onSubmit={e => e.preventDefault()}>
-          <h4>Criar Nova Postagem</h4>
+        <form className="form-grid" style={{ background: 'var(--bg-subtle)', padding: 'var(--space-4)', borderRadius: 'var(--radius-md)', marginBottom: 'var(--space-4)', border: '1px solid var(--border-default)' }} onSubmit={handleSubmit}>
+          <h4>Criar Nova Postagem/Campanha</h4>
           
           <label>
             Banner (Opcional)
-            <select>
+            <select value={selectedBanner} onChange={e => setSelectedBanner(e.target.value)} disabled={isSaving}>
               <option value="">Nenhum (Apenas texto)</option>
-              {banners.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+              {activeBanners.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
             </select>
           </label>
 
           <label>
             Template (Opcional)
-            <select>
-              <option value="">Personalizado</option>
+            <select value={selectedTemplate} onChange={e => {
+              setSelectedTemplate(e.target.value);
+              if (e.target.value) setMessageText(''); // Clear custom text if template selected
+            }} disabled={isSaving}>
+              <option value="">Personalizado (Digitar mensagem)</option>
               {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
             </select>
           </label>
 
+          {!selectedTemplate && (
+            <label>
+              Mensagem Personalizada
+              <textarea 
+                rows={4} 
+                placeholder="Digite a mensagem que acompanhará o envio..." 
+                value={messageText}
+                onChange={e => setMessageText(e.target.value)}
+                disabled={isSaving}
+              />
+            </label>
+          )}
+
+          {selectedTemplate && (
+            <div style={{ padding: '1rem', background: 'var(--bg-body)', border: '1px dashed var(--border-default)', borderRadius: '4px', fontSize: '0.9rem' }}>
+              <strong>Preview do Template:</strong>
+              <div style={{ whiteSpace: 'pre-wrap', marginTop: '0.5rem', color: 'var(--text-muted)' }}>
+                {templates.find(t => t.id === selectedTemplate)?.message_text}
+              </div>
+            </div>
+          )}
+
           <label>
-            Mensagem Personalizada
-            <textarea rows={4} placeholder="Digite a mensagem que acompanhará o envio..." />
+            Destinatários ({selectedContacts.length} selecionados)
+            <div style={{ border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)', padding: '0.5rem', maxHeight: '200px', overflowY: 'auto', background: 'var(--bg-body)' }}>
+              <div style={{ marginBottom: '0.5rem', paddingBottom: '0.5rem', borderBottom: '1px solid var(--border-subtle)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0, cursor: 'pointer' }}>
+                  <input 
+                    type="checkbox" 
+                    checked={selectedContacts.length === contacts.length && contacts.length > 0}
+                    onChange={handleSelectAllContacts}
+                    disabled={isSaving || contacts.length === 0}
+                  />
+                  <strong>Selecionar Todos</strong>
+                </label>
+              </div>
+              {contacts.length === 0 ? (
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>Nenhum contato disponível.</span>
+              ) : (
+                contacts.map(c => (
+                  <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', margin: '0.25rem 0', cursor: 'pointer', fontSize: '0.9rem' }}>
+                    <input 
+                      type="checkbox" 
+                      value={c.id}
+                      checked={selectedContacts.includes(c.id)}
+                      onChange={() => handleContactToggle(c.id)}
+                      disabled={isSaving}
+                    />
+                    {c.name} {c.segment && <span className="tag" style={{ fontSize: '0.7rem', padding: '0.1rem 0.3rem' }}>{c.segment}</span>}
+                  </label>
+                ))
+              )}
+            </div>
           </label>
 
           <label>
-            Destinatários
-            <select multiple size={3}>
-              {contacts.map(c => <option key={c.id} value={c.id}>{c.name} ({c.segment || 'Geral'})</option>)}
-            </select>
-          </label>
-
-          <label>
-            Data de Agendamento (Deixe em branco para enviar agora)
-            <input type="datetime-local" />
+            Data de Agendamento (Deixe em branco para enviar imediatamente)
+            <input 
+              type="datetime-local" 
+              value={scheduledAt}
+              onChange={e => setScheduledAt(e.target.value)}
+              disabled={isSaving}
+            />
           </label>
 
           <div style={{ marginTop: 'var(--space-2)' }}>
-            <button className="primary" type="button">Agendar / Enviar Postagem</button>
+            <button className="primary" type="submit" disabled={isSaving}>
+              {isSaving ? 'Agendando...' : (scheduledAt ? 'Agendar Postagem' : 'Enviar Postagem Agora')}
+            </button>
           </div>
         </form>
       )}
@@ -898,17 +1047,52 @@ function PostsSection({ posts, banners, templates, contacts }: { posts: WhatsApp
         {posts.length === 0 ? (
           <p className="empty-state">Nenhuma postagem agendada ou enviada.</p>
         ) : (
-          posts.map(p => (
-            <li key={p.id} className="asset-row">
-              <div className="asset-copy">
-                <strong>Postagem para {p.recipient_count} contatos</strong>
-                <p style={{ fontSize: '0.8rem' }}>
-                  Status: <span className={`tag ${p.status === 'sent' ? 'success' : p.status === 'failed' ? 'danger' : ''}`}>{p.status.toUpperCase()}</span>
-                </p>
-                {p.scheduled_at && <span style={{ fontSize: '0.75rem' }}>Agendado para: {new Date(p.scheduled_at).toLocaleString('pt-BR')}</span>}
-              </div>
-            </li>
-          ))
+          posts.map(p => {
+            const isPending = p.status === 'pending';
+            const statusColor = p.status === 'sent' ? 'success' : p.status === 'failed' ? 'danger' : p.status === 'cancelled' ? 'default' : 'warning';
+            const statusLabel = {
+              'pending': 'AGENDADO',
+              'sent': 'ENVIADO',
+              'failed': 'FALHA',
+              'cancelled': 'CANCELADO'
+            }[p.status] || p.status.toUpperCase();
+
+            const bannerName = p.banner_id ? banners.find(b => b.id === p.banner_id)?.name || 'Banner (Excluído)' : 'Sem Banner';
+            const templateName = p.template_id ? templates.find(t => t.id === p.template_id)?.name || 'Template (Excluído)' : 'Mensagem Personalizada';
+
+            return (
+              <li key={p.id} className="asset-row" style={{ alignItems: 'flex-start' }}>
+                <div className="asset-copy" style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div>
+                      <strong>Campanha para {p.recipient_count} contatos</strong>
+                      <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
+                        <span>🖼️ {bannerName}</span> | <span>📝 {templateName}</span>
+                      </div>
+                    </div>
+                    <span className={`tag ${statusColor}`}>{statusLabel}</span>
+                  </div>
+                  <div style={{ fontSize: '0.8rem', marginTop: '0.5rem', display: 'flex', gap: '1rem', color: 'var(--text-muted)' }}>
+                    <span>Criado em: {new Date(p.created_at).toLocaleString('pt-BR')}</span>
+                    {p.scheduled_at && <span>Agendado para: <strong>{new Date(p.scheduled_at).toLocaleString('pt-BR')}</strong></span>}
+                    {p.sent_at && <span>Enviado em: {new Date(p.sent_at).toLocaleString('pt-BR')}</span>}
+                  </div>
+                </div>
+                {isPending && (
+                  <div className="asset-actions" style={{ marginLeft: '1rem' }}>
+                    <button 
+                      type="button" 
+                      className="danger" 
+                      onClick={() => handleCancel(p.id)}
+                      disabled={cancellingId === p.id}
+                    >
+                      {cancellingId === p.id ? '...' : 'Cancelar Envio'}
+                    </button>
+                  </div>
+                )}
+              </li>
+            );
+          })
         )}
       </ul>
     </article>

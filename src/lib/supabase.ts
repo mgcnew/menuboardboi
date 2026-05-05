@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import type { AudioAsset, Company, ImageAsset, MediaKind, Profile, CompanyUsage, UserRole, WhatsAppCredentials, WhatsAppBanner, WhatsAppPostTemplate, WhatsAppContact } from '../types';
+import type { AudioAsset, Company, ImageAsset, MediaKind, Profile, CompanyUsage, UserRole, WhatsAppCredentials, WhatsAppBanner, WhatsAppPostTemplate, WhatsAppContact, WhatsAppPost } from '../types';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -709,4 +709,57 @@ export async function updateWhatsAppBanner(bannerId: string, name: string): Prom
   
   if (error) throw error;
   return data as WhatsAppBanner;
+}
+
+// WhatsApp Posts
+export async function listWhatsAppPosts(companyId: string): Promise<WhatsAppPost[]> {
+  const client = assertSupabase();
+  const { data, error } = await client
+    .from('whatsapp_posts')
+    .select('*')
+    .eq('company_id', companyId)
+    .order('created_at', { ascending: false });
+
+  if (error) throw error;
+  return data as WhatsAppPost[];
+}
+
+export async function createWhatsAppPost(
+  companyId: string,
+  payload: {
+    banner_id?: string | null;
+    template_id?: string | null;
+    message_text?: string | null;
+    recipient_ids: string[];
+    scheduled_at?: string | null;
+  }
+): Promise<WhatsAppPost> {
+  const client = assertSupabase();
+  const { data, error } = await client
+    .from('whatsapp_posts')
+    .insert({
+      company_id: companyId,
+      banner_id: payload.banner_id || null,
+      template_id: payload.template_id || null,
+      message_text: payload.message_text || null,
+      recipient_ids: payload.recipient_ids,
+      recipient_count: payload.recipient_ids.length,
+      scheduled_at: payload.scheduled_at || null,
+      status: 'pending'
+    })
+    .select('*')
+    .single();
+
+  if (error) throw error;
+  return data as WhatsAppPost;
+}
+
+export async function cancelWhatsAppPost(postId: string): Promise<void> {
+  const client = assertSupabase();
+  const { error } = await client
+    .from('whatsapp_posts')
+    .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+    .eq('id', postId);
+  
+  if (error) throw error;
 }

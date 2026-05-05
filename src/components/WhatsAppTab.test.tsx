@@ -29,7 +29,9 @@ vi.mock('../lib/supabase', () => {
   createWhatsAppContact: vi.fn(),
   updateWhatsAppContact: vi.fn(),
   deleteWhatsAppContact: vi.fn(),
-  importWhatsAppContacts: vi.fn(),
+  listWhatsAppPosts: vi.fn().mockResolvedValue([]),
+  createWhatsAppPost: vi.fn(),
+  cancelWhatsAppPost: vi.fn(),
   };
 });
 
@@ -77,6 +79,53 @@ describe('WhatsAppTab - Contacts', () => {
     fireEvent.click(screen.getByText('Salvar Contato'));
 
     expect(supabaseLib.createWhatsAppContact).toHaveBeenCalledWith('test-company', 'Maria', ['5511888888888'], null);
+  });
+});
+
+describe('WhatsAppTab - Posts', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('can create a new post with custom message', async () => {
+    const mockContacts = [
+      { id: '1', company_id: 'test-company', name: 'João', phone_numbers: ['5511999999999'], created_at: '' },
+    ];
+    
+    vi.mocked(supabaseLib.listWhatsAppContacts).mockResolvedValue(mockContacts);
+    vi.mocked(supabaseLib.listWhatsAppPosts).mockResolvedValue([]);
+
+    render(<WhatsAppTab companyId="test-company" />);
+
+    // Switch to Posts tab
+    await waitFor(() => {
+      expect(screen.queryByText('Postagens')).not.toBeNull();
+    });
+    fireEvent.click(screen.getByText('Postagens'));
+
+    await waitFor(() => {
+      expect(screen.queryByText('+ Nova Postagem')).not.toBeNull();
+    });
+
+    fireEvent.click(screen.getByText('+ Nova Postagem'));
+
+    // Fill Form
+    const messageInput = screen.getByPlaceholderText('Digite a mensagem que acompanhará o envio...');
+    fireEvent.change(messageInput, { target: { value: 'Mensagem de teste' } });
+
+    // Select Contact
+    const checkbox = screen.getByDisplayValue('1');
+    fireEvent.click(checkbox);
+
+    fireEvent.click(screen.getByText('Enviar Postagem Agora'));
+
+    expect(supabaseLib.createWhatsAppPost).toHaveBeenCalledWith('test-company', {
+      banner_id: null,
+      template_id: null,
+      message_text: 'Mensagem de teste',
+      recipient_ids: ['1'],
+      scheduled_at: null
+    });
   });
 });
 
