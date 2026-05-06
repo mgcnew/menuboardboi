@@ -233,6 +233,10 @@ function CampaignsView({ companyId, posts, banners, templates, contacts, onReloa
   const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
   const [scheduledAt, setScheduledAt] = useState('');
 
+  const scheduledLocalLabel = scheduledAt
+    ? new Date(scheduledAt).toLocaleString('pt-BR')
+    : null;
+
   const activeBanners = banners.filter((b: WhatsAppBanner) => b.is_active);
 
   const resetForm = () => {
@@ -257,6 +261,15 @@ function CampaignsView({ companyId, posts, banners, templates, contacts, onReloa
     e.preventDefault();
     if (selectedContacts.length === 0) return showToast('Selecione pelo menos um destinatário.', 'error');
     if (!selectedTemplate && !messageText.trim() && !selectedBanner) return showToast('Adicione uma mensagem ou banner.', 'error');
+    if (scheduledAt) {
+      const scheduleDate = new Date(scheduledAt);
+      if (Number.isNaN(scheduleDate.getTime())) {
+        return showToast('Data de agendamento inválida.', 'error');
+      }
+      if (scheduleDate.getTime() <= Date.now()) {
+        return showToast('Escolha um horário futuro para agendar.', 'error');
+      }
+    }
 
     setIsSaving(true);
     try {
@@ -267,7 +280,12 @@ function CampaignsView({ companyId, posts, banners, templates, contacts, onReloa
         recipient_ids: selectedContacts,
         scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : null
       });
-      showToast('Campanha criada com sucesso!', 'success');
+      showToast(
+        scheduledAt
+          ? 'Campanha agendada com sucesso! Ela ficará pendente até o processador de envios executar.'
+          : 'Campanha criada com sucesso!',
+        'success',
+      );
       onReload();
       resetForm();
     } catch (error) {
@@ -310,7 +328,7 @@ function CampaignsView({ companyId, posts, banners, templates, contacts, onReloa
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 'var(--space-4)', borderBottom: '1px solid var(--border-subtle)', paddingBottom: 'var(--space-3)' }}>
             <div>
               <h3>Configurar Nova Campanha</h3>
-              <p>Preencha os detalhes do envio.</p>
+              <p>Passo a passo: 1) Conteúdo, 2) Destinatários, 3) Enviar agora ou agendar.</p>
             </div>
             <button type="button" onClick={resetForm} className="secondary" style={{ padding: '6px' }} aria-label="Fechar">
               <X size={18}/>
@@ -387,7 +405,7 @@ function CampaignsView({ companyId, posts, banners, templates, contacts, onReloa
           </label>
 
           <label style={{ marginTop: 'var(--space-4)' }}>
-            Data de Agendamento (Opcional)
+            Data e Hora do Agendamento (Opcional)
             <input 
               type="datetime-local" 
               value={scheduledAt}
@@ -395,8 +413,29 @@ function CampaignsView({ companyId, posts, banners, templates, contacts, onReloa
               disabled={isSaving}
               style={{ maxWidth: '300px' }}
             />
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Deixe em branco para enviar imediatamente.</span>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+              Deixe em branco para enviar imediatamente. Horário local do dispositivo.
+            </span>
+            {scheduledLocalLabel ? (
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginTop: 4 }}>
+                Será agendado para: <strong>{scheduledLocalLabel}</strong>
+              </span>
+            ) : null}
           </label>
+
+          <div
+            className="warning"
+            style={{
+              marginTop: 'var(--space-4)',
+              padding: '0.75rem',
+              borderRadius: 'var(--radius-sm)',
+              background: 'var(--bg-subtle)',
+              fontSize: '0.88rem',
+            }}
+          >
+            O agendamento só dispara automaticamente quando existe um processador de fila (worker/edge function + cron) configurado.
+            Se ele não estiver ativo, a campanha ficará como <strong>PENDING</strong>.
+          </div>
 
           <div style={{ display: 'flex', gap: 'var(--space-2)', marginTop: 'var(--space-4)', paddingTop: 'var(--space-3)', borderTop: '1px solid var(--border-subtle)' }}>
             <button className="primary" type="submit" disabled={isSaving || (selectedContacts.length === 0)}>
@@ -410,9 +449,9 @@ function CampaignsView({ companyId, posts, banners, templates, contacts, onReloa
       <div className="panel">
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', marginBottom: 'var(--space-1)' }}>
           <Clock size={20} />
-          <h3 style={{ margin: 0 }}>Histórico de Campanhas</h3>
+          <h3 style={{ margin: 0 }}>Fila e Histórico de Campanhas</h3>
         </div>
-        <p style={{ marginBottom: 'var(--space-4)' }}>Acompanhe os envios realizados e programados.</p>
+        <p style={{ marginBottom: 'var(--space-4)' }}>Acompanhe os envios imediatos, agendados e pendentes de processamento.</p>
         
         {posts.length === 0 ? (
           <div className="empty-state" style={{ padding: '3rem 1rem' }}>
@@ -426,7 +465,7 @@ function CampaignsView({ companyId, posts, banners, templates, contacts, onReloa
               <li key={post.id} className="asset-row">
                 <div className="asset-copy">
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <strong>{post.scheduled_at ? `Agendado para ${new Date(post.scheduled_at).toLocaleString('pt-BR')}` : 'Envio Imediato'}</strong>
+                    <strong>{post.scheduled_at ? `Agendado para ${new Date(post.scheduled_at).toLocaleString('pt-BR')}` : 'Envio imediato (sem agendamento)'}</strong>
                     <span className={`tag ${post.status === 'sent' ? 'success' : post.status === 'failed' ? 'danger' : ''}`}>
                       {post.status.toUpperCase()}
                     </span>
