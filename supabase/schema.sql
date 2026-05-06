@@ -132,7 +132,7 @@ alter table public.companies add column if not exists ticker_active boolean defa
 create table if not exists public.players (
   id uuid primary key default gen_random_uuid(),
   company_id uuid not null references public.companies(id) on delete cascade,
-  player_name text not null default 'TV Principal',
+  player_name text not null default 'TV',
   last_ping_at timestamptz not null default timezone('utc'::text, now()),
   current_media_name text,
   created_at timestamptz not null default timezone('utc'::text, now())

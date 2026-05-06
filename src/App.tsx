@@ -17,6 +17,7 @@ import {
   updateImageDays,
   updateCompanyTicker,
   listPlayers,
+  pingHeartbeat,
   uploadAudio,
   uploadImages,
   supabase,
@@ -30,6 +31,9 @@ import { useActiveImages } from './hooks/useActiveImages';
 import type { AudioAsset, Company, ImageAsset, MediaKind, Player, WhatsAppCredentials } from './types';
 
 const COMPANY_STORAGE_KEY = 'tv-ads-player-company-id';
+
+/** UUID da linha em `public.players` por empresa (gravado no browser da TV). */
+const TV_PLAYER_ROW_STORAGE_PREFIX = 'tv-ads-player-row-id-';
 
 /** Filtro amplo para picker no celular (Android/iOS costumam falhar com listas curtas de extensão). */
 const MOBILE_AUDIO_UPLOAD_ACCEPT =
@@ -110,6 +114,24 @@ function getAudioDisplayName(fileUrl: string) {
   return rawName
     .replace(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}[_-]?/i, '')
     .replace(/^[0-9]{10,}[_-]?/, '');
+}
+
+/** Nome curto da TV: ?tv=caixa → "TV caixa"; ?nome= / ?player= = texto livre. */
+function resolveTvPlayerNameFromSearch(search: string): string {
+  const q = new URLSearchParams(search);
+  const full = (q.get('nome') ?? q.get('player') ?? '').trim();
+  if (full) return full;
+  const spot = (q.get('tv') ?? q.get('setor') ?? '').trim();
+  if (spot) return `TV ${spot}`;
+  return 'TV';
+}
+
+function formatTvSignalAge(lastPing: Date, now: Date): string {
+  const sec = Math.max(0, Math.floor((now.getTime() - lastPing.getTime()) / 1000));
+  if (sec < 45) return 'agora';
+  if (sec < 3600) return `há ${Math.floor(sec / 60)} min`;
+  if (sec < 86400) return `há ${Math.floor(sec / 3600)} h`;
+  return `há ${Math.floor(sec / 86400)} d`;
 }
 
 /**
@@ -1046,6 +1068,15 @@ function ConfigMode() {
                     onClick={(e) => e.currentTarget.select()}
                   />
                 </label>
+                <p style={{ gridColumn: '1 / -1', margin: 0, fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                  Nome na lista: adicione{' '}
+                  <code style={{ fontSize: '0.8em' }}>?tv=caixa</code>,{' '}
+                  <code style={{ fontSize: '0.8em' }}>?tv=açougue</code> etc. (vira “TV caixa”, “TV açougue”).{' '}
+                  Ex.:{' '}
+                  <code style={{ fontSize: '0.8em' }}>
+                    {buildTvUrl(selectedCompany.access_code)}?tv=padaria
+                  </code>
+                </p>
               </div>
             ) : null}
 
@@ -1053,8 +1084,8 @@ function ConfigMode() {
               <article className="panel" style={{ marginTop: 'var(--space-4)' }}>
                 <header className="section-header">
                   <div>
-                    <h3>Status dos Players (TVs Online)</h3>
-                    <p>Monitore os dispositivos que estão reproduzindo a programação desta empresa.</p>
+                    <h3>TVs online</h3>
+                    <p>Quem está com o player aberto nesta empresa.</p>
                   </div>
                   <button type="button" className="secondary" onClick={() => {
                     const fetchPlayers = async () => {
@@ -1064,7 +1095,7 @@ function ConfigMode() {
                     };
                     void fetchPlayers();
                   }}>
-                    Atualizar Agora
+                    Atualizar
                   </button>
                 </header>
                 {players.length > 0 ? (
@@ -1073,27 +1104,37 @@ function ConfigMode() {
                       const lastPing = new Date(player.last_ping_at);
                       const now = new Date();
                       const isOnline = (now.getTime() - lastPing.getTime()) < 3 * 60 * 1000;
+                      const mediaRaw = player.current_media_name;
+                      const mediaShort =
+                        mediaRaw && mediaRaw !== '—'
+                          ? getAudioDisplayName(mediaRaw)
+                          : null;
                       
                       return (
-                        <li key={player.id} className="asset-row" style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '1rem' }}>
-                          <div style={{
-                            width: '12px',
-                            height: '12px',
-                            borderRadius: '50%',
-                            backgroundColor: isOnline ? 'var(--success)' : 'var(--danger)',
-                            flexShrink: 0
-                          }} />
-                          <div className="asset-copy">
-                            <strong>{player.player_name}</strong>
-                            <span>Último sinal: {lastPing.toLocaleString()}</span>
-                            <span>Tocando: {player.current_media_name || 'Desconhecido'}</span>
+                        <li key={player.id} className="asset-row" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem' }}>
+                          <div
+                            title={isOnline ? 'Online' : 'Sem sinal recente'}
+                            style={{
+                              width: '10px',
+                              height: '10px',
+                              borderRadius: '50%',
+                              backgroundColor: isOnline ? 'var(--success)' : 'var(--danger)',
+                              flexShrink: 0,
+                            }}
+                          />
+                          <div className="asset-copy" style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                            <strong style={{ fontSize: '1rem' }}>{player.player_name}</strong>
+                            <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                              {isOnline ? 'Online' : 'Offline'} · sinal {formatTvSignalAge(lastPing, now)}
+                              {mediaShort ? ` · ${mediaShort}` : ''}
+                            </span>
                           </div>
                         </li>
                       );
                     })}
                   </ul>
                 ) : (
-                  <EmptyState text="Nenhuma TV conectada detectada nos últimos minutos." />
+                  <EmptyState text="Nenhuma TV com sinal no momento." />
                 )}
               </article>
             ) : null}
@@ -2023,6 +2064,22 @@ function TvMode({ accessCode }: { accessCode: string }) {
   useAudioMixer(music, voiceovers, audioSettings);
 
   const activeImages = useActiveImages(images, currentDay);
+  const currentImage = activeImages[currentImageIndex];
+
+  const currentMediaLabelRef = useRef('');
+  useEffect(() => {
+    currentMediaLabelRef.current = currentImage
+      ? getFileName(currentImage.file_path || currentImage.file_url)
+      : '';
+  }, [currentImage]);
+
+  const tvPlayerDisplayName = useMemo(() => {
+    try {
+      return resolveTvPlayerNameFromSearch(window.location.search);
+    } catch {
+      return 'TV';
+    }
+  }, []);
 
   const loadPlayerData = useCallback(async () => {
     if (!isSupabaseConfigured) {
@@ -2129,7 +2186,31 @@ function TvMode({ accessCode }: { accessCode: string }) {
     img.src = url;
   }, [activeImages, currentImageIndex]);
 
-  const currentImage = activeImages[currentImageIndex];
+  useEffect(() => {
+    if (!company?.id || !isSupabaseConfigured) return;
+
+    const storageKey = `${TV_PLAYER_ROW_STORAGE_PREFIX}${company.id}`;
+
+    const sendPing = async () => {
+      try {
+        const storedId = localStorage.getItem(storageKey);
+        const rowId = await pingHeartbeat(
+          company.id,
+          storedId,
+          tvPlayerDisplayName,
+          currentMediaLabelRef.current || '—',
+        );
+        localStorage.setItem(storageKey, rowId);
+      } catch (e) {
+        console.warn('Heartbeat da TV falhou (verifique RLS/rede):', e);
+      }
+    };
+
+    void sendPing();
+    const intervalId = window.setInterval(sendPing, 30_000);
+    return () => window.clearInterval(intervalId);
+  }, [company?.id, tvPlayerDisplayName]);
+
   const transitionType = normalizeTvTransitionType(company?.transition_type);
   const transitionDuration = company?.transition_duration_seconds ?? 1.0;
   const photoDuration = company?.image_duration_seconds ?? 10;
