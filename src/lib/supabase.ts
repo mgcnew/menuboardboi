@@ -158,23 +158,48 @@ export async function updateCompanyAudioSettings(companyId: string, audioSetting
   }
 }
 
+function isLikelyUuid(v: string | null | undefined): v is string {
+  return typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.trim());
+}
+
+/**
+ * Heartbeat da TV. Preferimos a RPC `tv_heartbeat` (security definer) para funcionar mesmo com RLS restritivo;
+ * se a RPC não existir no projeto, cai no insert/update direto na tabela.
+ */
 export async function pingHeartbeat(companyId: string, playerId: string | null, playerName: string, currentMediaName: string) {
   const client = assertSupabase();
+  const cleanPlayerId = isLikelyUuid(playerId) ? playerId.trim() : null;
+
+  const { data: rpcId, error: rpcError } = await client.rpc('tv_heartbeat', {
+    p_company_id: companyId,
+    p_player_id: cleanPlayerId,
+    p_player_name: playerName,
+    p_media: currentMediaName,
+  });
+
+  if (!rpcError && rpcId != null && String(rpcId).length > 0) {
+    return String(rpcId);
+  }
+
   const payload = {
     company_id: companyId,
     player_name: playerName,
     last_ping_at: new Date().toISOString(),
-    current_media_name: currentMediaName
+    current_media_name: currentMediaName,
   };
-  
-  if (playerId) {
-    const { data, error } = await client.from('players').update(payload).eq('id', playerId).select('id').maybeSingle();
+
+  if (cleanPlayerId) {
+    const { data, error } = await client
+      .from('players')
+      .update(payload)
+      .eq('id', cleanPlayerId)
+      .select('id')
+      .maybeSingle();
     if (!error && data) {
       return data.id;
     }
   }
-  
-  // Se não tinha playerId ou o update não retornou nada (talvez foi apagado), inserimos
+
   const { data, error } = await client.from('players').insert(payload).select('id').single();
   if (error) throw error;
   return data.id;
@@ -189,7 +214,7 @@ export async function listPlayers(companyId: string) {
     .order('last_ping_at', { ascending: false });
 
   if (error) throw error;
-  return data as import('../types').Player[];
+  return (data ?? []) as import('../types').Player[];
 }
 
 export async function listImages(companyId: string) {

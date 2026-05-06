@@ -199,6 +199,7 @@ function ConfigMode() {
   const [tickerTextInput, setTickerTextInput] = useState('');
   const [tickerActiveInput, setTickerActiveInput] = useState(false);
   const [players, setPlayers] = useState<Player[]>([]);
+  const [playersListError, setPlayersListError] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; message: string; stats?: { original: number; compressed: number } } | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [previewResolution, setPreviewResolution] = useState<'landscape' | 'portrait' | 'square'>('landscape');
@@ -324,8 +325,12 @@ function ConfigMode() {
       try {
         const data = await listPlayers(selectedCompanyId);
         setPlayers(data);
+        setPlayersListError(null);
       } catch (e) {
         console.error('Erro ao buscar status das TVs', e);
+        const msg = e instanceof Error ? e.message : String(e);
+        setPlayersListError(msg);
+        setPlayers([]);
       }
     };
     void fetchPlayers();
@@ -1090,14 +1095,28 @@ function ConfigMode() {
                   <button type="button" className="secondary" onClick={() => {
                     const fetchPlayers = async () => {
                       if (!selectedCompanyId) return;
-                      const data = await listPlayers(selectedCompanyId);
-                      setPlayers(data);
+                      try {
+                        const data = await listPlayers(selectedCompanyId);
+                        setPlayers(data);
+                        setPlayersListError(null);
+                      } catch (err) {
+                        const msg = err instanceof Error ? err.message : String(err);
+                        setPlayersListError(msg);
+                        setPlayers([]);
+                      }
                     };
                     void fetchPlayers();
                   }}>
                     Atualizar
                   </button>
                 </header>
+                {playersListError ? (
+                  <p className="warning" style={{ marginTop: 'var(--space-3)', fontSize: '0.9rem' }}>
+                    Não foi possível carregar as TVs: {playersListError}. Confira no Supabase a tabela{' '}
+                    <code>players</code>, políticas RLS (SELECT para <code>authenticated</code>) e se a função{' '}
+                    <code>tv_heartbeat</code> foi criada (veja <code>supabase/players_tv_manual.sql</code>).
+                  </p>
+                ) : null}
                 {players.length > 0 ? (
                   <ul className="asset-list" style={{ marginTop: 'var(--space-4)' }}>
                     {players.map((player) => {

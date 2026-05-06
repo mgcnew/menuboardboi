@@ -157,6 +157,56 @@ to anon, authenticated
 using (true)
 with check (true);
 
+grant select on table public.players to authenticated;
+grant select, insert, update on table public.players to anon, authenticated;
+grant all on table public.players to service_role;
+
+-- Heartbeat da TV via RPC (contorna RLS se políticas estiverem incompletas)
+create or replace function public.tv_heartbeat(
+  p_company_id uuid,
+  p_player_id uuid,
+  p_player_name text,
+  p_media text
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_id uuid;
+begin
+  if p_player_id is not null then
+    update public.players
+    set
+      player_name = coalesce(nullif(trim(p_player_name), ''), 'TV'),
+      last_ping_at = timezone('utc'::text, now()),
+      current_media_name = nullif(trim(p_media), ''),
+      company_id = p_company_id
+    where id = p_player_id
+      and company_id = p_company_id
+    returning id into v_id;
+    if v_id is not null then
+      return v_id;
+    end if;
+  end if;
+
+  insert into public.players (company_id, player_name, last_ping_at, current_media_name)
+  values (
+    p_company_id,
+    coalesce(nullif(trim(p_player_name), ''), 'TV'),
+    timezone('utc'::text, now()),
+    nullif(trim(p_media), '')
+  )
+  returning id into v_id;
+
+  return v_id;
+end;
+$$;
+
+revoke all on function public.tv_heartbeat(uuid, uuid, text, text) from public;
+grant execute on function public.tv_heartbeat(uuid, uuid, text, text) to anon, authenticated, service_role;
+
 -- Tabelas adicionais para Multi-Tenancy e RBAC (retrocompatíveis)
 create type public.user_role as enum ('client', 'master_admin');
 
