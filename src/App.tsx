@@ -35,6 +35,28 @@ const COMPANY_STORAGE_KEY = 'tv-ads-player-company-id';
 const MOBILE_AUDIO_UPLOAD_ACCEPT =
   'audio/*,audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,audio/x-wav,audio/wav,.mp3,.mpga,.m4a,.wav,.aac,.ogg,.opus,.flac,.webm,.3gp,.caf,.amr';
 
+/** Tipos com classes `.transition-*` em styles.css; outros valores caem em fade (evita “corte” por classe inexistente). */
+const TV_TRANSITION_TYPES = new Set([
+  'fade',
+  'cut',
+  'wipe-horizontal',
+  'wipe-vertical',
+  'wipe-diagonal',
+  'zoom-in',
+  'zoom-out',
+  'slide-left',
+  'slide-right',
+  'slide-up',
+  'slide-down',
+  'blur-in',
+  'iris',
+]);
+
+function normalizeTvTransitionType(raw: string | undefined): string {
+  const t = raw ?? 'fade';
+  return TV_TRANSITION_TYPES.has(t) ? t : 'fade';
+}
+
 const WEEK_DAYS = [
   { label: 'D', title: 'Domingo', value: 0 },
   { label: 'S', title: 'Segunda', value: 1 },
@@ -2098,8 +2120,17 @@ function TvMode({ accessCode }: { accessCode: string }) {
     return () => window.clearInterval(timer);
   }, [company?.image_duration_seconds, company?.transition_duration_seconds, activeImages]);
 
+  useEffect(() => {
+    if (activeImages.length === 0) return;
+    const nextIdx = (currentImageIndex + 1) % activeImages.length;
+    const url = activeImages[nextIdx]?.file_url;
+    if (!url) return;
+    const img = new Image();
+    img.src = url;
+  }, [activeImages, currentImageIndex]);
+
   const currentImage = activeImages[currentImageIndex];
-  const transitionType = company?.transition_type ?? 'fade';
+  const transitionType = normalizeTvTransitionType(company?.transition_type);
   const transitionDuration = company?.transition_duration_seconds ?? 1.0;
   const photoDuration = company?.image_duration_seconds ?? 10;
   const imageFitMode = company?.image_fit_mode ?? 'cover';
@@ -2136,7 +2167,6 @@ function TvMode({ accessCode }: { accessCode: string }) {
           key={`${currentImage.id}-${transitionType}-${transitionDuration}-${photoDuration}`}
           className={`tv-image-container transition-${transitionType}`}
           style={{
-            animationDuration: `${photoDuration + transitionDuration}s`,
             '--trans-duration': `${transitionType === 'cut' ? 0 : transitionDuration}s`,
             '--photo-duration': `${photoDuration}s`,
             position: 'absolute',
