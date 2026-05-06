@@ -191,7 +191,11 @@ export async function pingHeartbeat(companyId: string, playerId: string | null, 
   if (cleanPlayerId) {
     const { data, error } = await client
       .from('players')
-      .update(payload)
+      .update({
+        company_id: companyId,
+        last_ping_at: payload.last_ping_at,
+        current_media_name: payload.current_media_name,
+      })
       .eq('id', cleanPlayerId)
       .select('id')
       .maybeSingle();
@@ -215,6 +219,21 @@ export async function listPlayers(companyId: string) {
 
   if (error) throw error;
   return (data ?? []) as import('../types').Player[];
+}
+
+/** Nome exibido no painel; o heartbeat da TV não sobrescreve após o 1º registro. */
+export async function updatePlayerName(companyId: string, playerId: string, playerName: string) {
+  const client = assertSupabase();
+  const trimmed = playerName.trim();
+  if (!trimmed) {
+    throw new Error('O nome da TV não pode ficar vazio.');
+  }
+  const { error } = await client
+    .from('players')
+    .update({ player_name: trimmed })
+    .eq('id', playerId)
+    .eq('company_id', companyId);
+  if (error) throw error;
 }
 
 export async function listImages(companyId: string) {

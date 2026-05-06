@@ -60,9 +60,9 @@ declare
   v_id uuid;
 begin
   if p_player_id is not null then
+    -- Não altera player_name no ping: renomeação no painel preservada; só INSERT define o nome.
     update public.players
     set
-      player_name = coalesce(nullif(trim(p_player_name), ''), 'TV'),
       last_ping_at = timezone('utc'::text, now()),
       current_media_name = nullif(trim(p_media), ''),
       company_id = p_company_id

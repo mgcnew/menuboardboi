@@ -18,6 +18,7 @@ import {
   updateCompanyTicker,
   listPlayers,
   pingHeartbeat,
+  updatePlayerName,
   uploadAudio,
   uploadImages,
   supabase,
@@ -200,6 +201,8 @@ function ConfigMode() {
   const [tickerActiveInput, setTickerActiveInput] = useState(false);
   const [players, setPlayers] = useState<Player[]>([]);
   const [playersListError, setPlayersListError] = useState<string | null>(null);
+  const [playerRenameDraft, setPlayerRenameDraft] = useState<{ playerId: string; name: string } | null>(null);
+  const [playerRenameSaving, setPlayerRenameSaving] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; message: string; stats?: { original: number; compressed: number } } | null>(null);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [previewResolution, setPreviewResolution] = useState<'landscape' | 'portrait' | 'square'>('landscape');
@@ -1074,13 +1077,9 @@ function ConfigMode() {
                   />
                 </label>
                 <p style={{ gridColumn: '1 / -1', margin: 0, fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-                  Nome na lista: adicione{' '}
-                  <code style={{ fontSize: '0.8em' }}>?tv=caixa</code>,{' '}
-                  <code style={{ fontSize: '0.8em' }}>?tv=açougue</code> etc. (vira “TV caixa”, “TV açougue”).{' '}
-                  Ex.:{' '}
-                  <code style={{ fontSize: '0.8em' }}>
-                    {buildTvUrl(selectedCompany.access_code)}?tv=padaria
-                  </code>
+                  Na 1ª abertura do player, dá para sugerir nome na URL (ex.:{' '}
+                  <code style={{ fontSize: '0.8em' }}>{buildTvUrl(selectedCompany.access_code)}?tv=padaria</code>
+                  ). Depois, ajuste o nome em <strong>TVs online</strong> com Renomear.
                 </p>
               </div>
             ) : null}
@@ -1090,7 +1089,7 @@ function ConfigMode() {
                 <header className="section-header">
                   <div>
                     <h3>TVs online</h3>
-                    <p>Quem está com o player aberto nesta empresa.</p>
+                    <p>Quem está com o player aberto. Use Renomear para o nome aparecer assim no painel (o nome da URL só vale na 1ª conexão da TV).</p>
                   </div>
                   <button type="button" className="secondary" onClick={() => {
                     const fetchPlayers = async () => {
@@ -1129,8 +1128,10 @@ function ConfigMode() {
                           ? getAudioDisplayName(mediaRaw)
                           : null;
                       
+                      const isRenaming = playerRenameDraft?.playerId === player.id;
+
                       return (
-                        <li key={player.id} className="asset-row" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem' }}>
+                        <li key={player.id} className="asset-row" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', flexWrap: 'wrap' }}>
                           <div
                             title={isOnline ? 'Online' : 'Sem sinal recente'}
                             style={{
@@ -1141,13 +1142,73 @@ function ConfigMode() {
                               flexShrink: 0,
                             }}
                           />
-                          <div className="asset-copy" style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                            <strong style={{ fontSize: '1rem' }}>{player.player_name}</strong>
+                          <div className="asset-copy" style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', flex: '1 1 12rem', minWidth: 0 }}>
+                            {isRenaming ? (
+                              <div className="inline-group" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
+                                <input
+                                  type="text"
+                                  value={playerRenameDraft.name}
+                                  onChange={(e) => setPlayerRenameDraft({ playerId: player.id, name: e.target.value })}
+                                  aria-label="Novo nome da TV"
+                                  disabled={playerRenameSaving}
+                                  style={{ minWidth: '10rem' }}
+                                />
+                                <button
+                                  type="button"
+                                  disabled={playerRenameSaving || !selectedCompanyId}
+                                  onClick={() => {
+                                    if (!selectedCompanyId || !playerRenameDraft) return;
+                                    const name = playerRenameDraft.name.trim();
+                                    if (!name) {
+                                      setFeedback('Digite um nome para a TV.');
+                                      return;
+                                    }
+                                    setPlayerRenameSaving(true);
+                                    void (async () => {
+                                      try {
+                                        await updatePlayerName(selectedCompanyId, player.id, name);
+                                        setPlayerRenameDraft(null);
+                                        const data = await listPlayers(selectedCompanyId);
+                                        setPlayers(data);
+                                        setPlayersListError(null);
+                                        setFeedback('');
+                                      } catch (err) {
+                                        setFeedback(err instanceof Error ? err.message : String(err));
+                                      } finally {
+                                        setPlayerRenameSaving(false);
+                                      }
+                                    })();
+                                  }}
+                                >
+                                  Salvar
+                                </button>
+                                <button
+                                  type="button"
+                                  className="secondary"
+                                  disabled={playerRenameSaving}
+                                  onClick={() => setPlayerRenameDraft(null)}
+                                >
+                                  Cancelar
+                                </button>
+                              </div>
+                            ) : (
+                              <strong style={{ fontSize: '1rem' }}>{player.player_name}</strong>
+                            )}
                             <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
                               {isOnline ? 'Online' : 'Offline'} · sinal {formatTvSignalAge(lastPing, now)}
                               {mediaShort ? ` · ${mediaShort}` : ''}
                             </span>
                           </div>
+                          {!isRenaming ? (
+                            <button
+                              type="button"
+                              className="secondary"
+                              style={{ flexShrink: 0, alignSelf: 'center' }}
+                              onClick={() => setPlayerRenameDraft({ playerId: player.id, name: player.player_name })}
+                            >
+                              Renomear
+                            </button>
+                          ) : null}
                         </li>
                       );
                     })}
