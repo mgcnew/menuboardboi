@@ -17,6 +17,48 @@ export function getFileName(filePathOrUrl: string): string {
   return normalized.split('/').pop() ?? filePathOrUrl;
 }
 
+/**
+ * Nome seguro para chave no Supabase Storage: sem acentos, parênteses ou caracteres especiais
+ * (evita erro "Invalid key" em uploads vindos do celular / WhatsApp).
+ */
+export function sanitizeStorageFilename(originalName: string): string {
+  const trimmed = originalName.trim() || 'file';
+  const lastDot = trimmed.lastIndexOf('.');
+  const hasExt = lastDot > 0 && lastDot < trimmed.length - 1;
+
+  let ext = hasExt ? trimmed.slice(lastDot).toLowerCase() : '';
+  ext = ext.replace(/[^a-z0-9.]+/g, '');
+  if (ext && !ext.startsWith('.')) {
+    ext = `.${ext}`;
+  }
+  if (ext.length > 14) {
+    ext = ext.slice(0, 14);
+  }
+  if (ext !== '' && ext !== '.' && !/^\.[a-z0-9]{1,10}$/.test(ext)) {
+    ext = '';
+  }
+
+  let base = hasExt ? trimmed.slice(0, lastDot) : trimmed;
+  base = base
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^\x00-\x7F]/g, '-')
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^[-_.]+|[-_.]+$/g, '')
+    .toLowerCase();
+
+  if (!base) base = 'arquivo';
+
+  const maxStem = 100;
+  if (base.length > maxStem) {
+    base = base.slice(0, maxStem).replace(/-+$/, '');
+  }
+
+  const out = ext ? `${base}${ext}` : base;
+  return out || 'arquivo.bin';
+}
+
 export function formatBytes(bytes: number, decimals = 2): string {
   if (!+bytes) return '0 Bytes';
   const k = 1024;

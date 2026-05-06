@@ -14,6 +14,7 @@ import type {
   WhatsAppContact,
   WhatsAppPost,
 } from '../types';
+import { sanitizeStorageFilename } from './utils';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -280,7 +281,7 @@ export async function listAudio(companyId: string, table: MediaKind) {
 
 async function uploadToBucket(bucket: MediaKind | 'images', companyId: string, file: File) {
   const client = assertSupabase();
-  const safeName = file.name.replace(/\s+/g, '-').toLowerCase();
+  const safeName = sanitizeStorageFilename(file.name);
   const filePath = `${companyId}/${crypto.randomUUID()}-${safeName}`;
   const { error } = await client.storage.from(bucket).upload(filePath, file, {
     cacheControl: '3600',
@@ -734,7 +735,9 @@ export async function uploadWhatsAppBanners(companyId: string, files: File[]): P
 export async function uploadSingleWhatsAppBanner(companyId: string, file: File, name: string): Promise<WhatsAppBanner> {
   const client = assertSupabase();
 
-  const fileExt = file.name.split('.').pop();
+  const safeFile = sanitizeStorageFilename(file.name);
+  const fallbackExt = safeFile.includes('.') ? safeFile.slice(safeFile.lastIndexOf('.') + 1) : 'jpg';
+  const fileExt = /^[a-z0-9]{1,8}$/i.test(fallbackExt) ? fallbackExt.toLowerCase() : 'jpg';
   const filePath = `${companyId}/${Date.now()}_${Math.random().toString(36).substring(2)}.${fileExt}`;
   
   const { error: uploadError } = await client.storage
