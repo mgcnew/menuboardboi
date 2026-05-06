@@ -124,7 +124,7 @@ export type WhatsAppContact = {
   created_at: string;
 };
 
-export type WhatsAppPostStatus = 'pending' | 'sent' | 'failed' | 'cancelled';
+export type WhatsAppPostStatus = 'pending' | 'processing' | 'sent' | 'failed' | 'cancelled';
 
 export type WhatsAppApprovalStatus = 'draft' | 'pending_approval' | 'approved' | 'rejected';
 

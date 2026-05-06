@@ -49,7 +49,7 @@ create table if not exists public.whatsapp_posts (
   message_text text,
   recipient_ids uuid[] not null default '{}',
   scheduled_at timestamptz,
-  status text not null default 'pending' check (status in ('pending', 'sent', 'failed', 'cancelled')),
+  status text not null default 'pending' check (status in ('pending', 'processing', 'sent', 'failed', 'cancelled')),
   sent_at timestamptz,
   recipient_count integer not null default 0,
   created_at timestamptz not null default timezone('utc'::text, now()),
@@ -70,6 +70,7 @@ create table if not exists public.whatsapp_credentials (
   phone_number text,
   is_active boolean not null default false,
   created_at timestamptz not null default timezone('utc'::text, now()),
+  updated_at timestamptz not null default timezone('utc'::text, now()),
   unique(company_id)
 );
 

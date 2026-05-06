@@ -25,6 +25,23 @@ interface WhatsAppTabProps {
   companyId: string;
 }
 
+function getPostStatusLabel(status: string): string {
+  switch (status) {
+    case 'pending':
+      return 'PENDENTE';
+    case 'processing':
+      return 'PROCESSANDO';
+    case 'sent':
+      return 'ENVIADO';
+    case 'failed':
+      return 'FALHOU';
+    case 'cancelled':
+      return 'CANCELADO';
+    default:
+      return status.toUpperCase();
+  }
+}
+
 export function WhatsAppTab({ companyId }: WhatsAppTabProps) {
   const [activeView, setActiveView] = useState<MainView>('campaigns');
   const [librarySection, setLibrarySection] = useState<LibrarySection>('contacts');
@@ -157,6 +174,18 @@ export function WhatsAppTab({ companyId }: WhatsAppTabProps) {
           <p>Crie campanhas, envie mensagens e gerencie sua base de clientes.</p>
         </div>
       </header>
+
+      <div
+        className="panel"
+        style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-subtle)' }}
+      >
+        <h3 style={{ marginBottom: 6 }}>Como funciona</h3>
+        <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+          1) Cadastre contatos, textos e banners em <strong>Base de Dados e Recursos</strong>. 2) Em
+          <strong> Campanhas & Envios</strong>, escolha conteúdo + destinatários. 3) Envie na hora ou agende.
+          Quando agendado, o item passa por: <strong>PENDENTE → PROCESSANDO → ENVIADO/FALHOU</strong>.
+        </p>
+      </div>
 
       <nav className="dashboard-nav" aria-label="Navegação do WhatsApp">
         <button 
@@ -467,14 +496,14 @@ function CampaignsView({ companyId, posts, banners, templates, contacts, onReloa
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     <strong>{post.scheduled_at ? `Agendado para ${new Date(post.scheduled_at).toLocaleString('pt-BR')}` : 'Envio imediato (sem agendamento)'}</strong>
                     <span className={`tag ${post.status === 'sent' ? 'success' : post.status === 'failed' ? 'danger' : ''}`}>
-                      {post.status.toUpperCase()}
+                      {getPostStatusLabel(post.status)}
                     </span>
                   </div>
                   <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
                     Destinatários: {post.recipient_count}
                   </p>
                 </div>
-                {post.status === 'pending' && (
+                {(post.status === 'pending' || post.status === 'processing') && (
                   <div className="asset-actions">
                     <button type="button" className="danger" onClick={() => handleCancel(post.id)} disabled={cancellingId === post.id}>
                       {cancellingId === post.id ? '...' : 'Cancelar'}
