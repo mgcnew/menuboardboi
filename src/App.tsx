@@ -31,6 +31,10 @@ import type { AudioAsset, Company, ImageAsset, MediaKind, Player, WhatsAppCreden
 
 const COMPANY_STORAGE_KEY = 'tv-ads-player-company-id';
 
+/** Filtro amplo para picker no celular (Android/iOS costumam falhar com listas curtas de extensão). */
+const MOBILE_AUDIO_UPLOAD_ACCEPT =
+  'audio/*,audio/mpeg,audio/mp3,audio/mp4,audio/x-m4a,audio/x-wav,audio/wav,.mp3,.mpga,.m4a,.wav,.aac,.ogg,.opus,.flac,.webm,.3gp,.caf,.amr';
+
 const WEEK_DAYS = [
   { label: 'D', title: 'Domingo', value: 0 },
   { label: 'S', title: 'Segunda', value: 1 },
@@ -1157,10 +1161,19 @@ function ConfigMode() {
                       onChange={(e) => setTransitionTypeInput(e.target.value)}
                       disabled={busy}
                     >
-                      <option value="fade">Fade (Dissolvência)</option>
-                      <option value="cut">Cut (Corte Direto)</option>
-                      <option value="wipe-horizontal">Wipe Horizontal</option>
-                      <option value="wipe-vertical">Wipe Vertical</option>
+                      <option value="fade">Fade (dissolvência clássica)</option>
+                      <option value="cut">Cut (corte direto)</option>
+                      <option value="wipe-horizontal">Wipe horizontal</option>
+                      <option value="wipe-vertical">Wipe vertical</option>
+                      <option value="zoom-in">Zoom suave — entrada (ofertas em destaque)</option>
+                      <option value="zoom-out">Zoom aberto — revelação ampla</option>
+                      <option value="slide-left">Desliza da direita</option>
+                      <option value="slide-right">Desliza da esquerda</option>
+                      <option value="slide-up">Sobe de baixo</option>
+                      <option value="slide-down">Desce de cima</option>
+                      <option value="blur-in">Foco suave (blur → nítido)</option>
+                      <option value="iris">Abertura circular (spotlight)</option>
+                      <option value="wipe-diagonal">Wipe diagonal (dinâmico)</option>
                     </select>
                   </label>
 
@@ -1626,12 +1639,13 @@ function ConfigMode() {
           <MediaSection
             title="Trilha Sonora"
             description="Músicas que compõem o ciclo principal de áudio. Você pode enviar múltiplos arquivos de uma vez."
-            accept="audio/*,.mp3,.wav,.mpeg,.m4a"
+            accept={MOBILE_AUDIO_UPLOAD_ACCEPT}
             multiple
             onUpload={(files) => void handleUpload(files, 'music')}
             disabled={!selectedCompanyId || busy}
             isUploading={busy}
             uploadProgress={uploadProgress}
+            mobilePickerHint="No celular, prefira Arquivos ou Downloads. Apps de música podem mostrar álbuns como pastas — abra até encontrar o arquivo .mp3."
           >
             <AssetList
               items={music}
@@ -1655,12 +1669,13 @@ function ConfigMode() {
           <MediaSection
             title="Locuções e Avisos"
             description="Áudios secundários intercalados com a trilha sonora. Você pode enviar múltiplos arquivos de uma vez."
-            accept="audio/*,.mp3,.wav,.mpeg,.m4a"
+            accept={MOBILE_AUDIO_UPLOAD_ACCEPT}
             multiple
             onUpload={(files) => void handleUpload(files, 'voiceovers')}
             disabled={!selectedCompanyId || busy}
             isUploading={busy}
             uploadProgress={uploadProgress}
+            mobilePickerHint="No celular, prefira Arquivos ou Downloads. Apps de música podem mostrar álbuns como pastas — abra até encontrar o arquivo de áudio."
           >
             <AssetList
               items={voiceovers}
@@ -1771,6 +1786,8 @@ type MediaSectionProps = {
   uploadProgress?: { current: number; total: number; message: string; stats?: { original: number; compressed: number } } | null;
   onUpload: (files: FileList | null) => void;
   children: ReactNode;
+  /** Dica curta para upload em celular (ex.: áudio). */
+  mobilePickerHint?: string;
 };
 
 /**
@@ -1786,6 +1803,7 @@ function MediaSection({
   uploadProgress,
   onUpload,
   children,
+  mobilePickerHint,
 }: MediaSectionProps) {
   return (
     <article className="panel">
@@ -1793,6 +1811,9 @@ function MediaSection({
         <div>
           <h3>{title}</h3>
           <p>{description}</p>
+          {mobilePickerHint ? (
+            <p className="upload-mobile-hint">{mobilePickerHint}</p>
+          ) : null}
         </div>
         <label className="upload-button" aria-label={`Fazer upload para ${title}`}>
           <input
@@ -1805,7 +1826,9 @@ function MediaSection({
               event.target.value = '';
             }}
           />
-          <span aria-hidden="true">{isUploading ? 'Processando...' : '+ Adicionar'}</span>
+          <span className="upload-button-label" aria-hidden="true">
+            {isUploading ? 'Processando...' : '+ Adicionar'}
+          </span>
         </label>
       </header>
       
