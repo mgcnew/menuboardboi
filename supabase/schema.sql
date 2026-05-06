@@ -10,6 +10,7 @@ create table if not exists public.companies (
   image_fit_mode text not null default 'cover' check (image_fit_mode in ('contain', 'cover', 'fill')),
   ticker_text text not null default '',
   ticker_active boolean not null default false,
+  audio_settings jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default timezone('utc'::text, now())
 );
 

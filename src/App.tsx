@@ -171,9 +171,6 @@ function ConfigMode() {
   const [waPhoneNumber, setWaPhoneNumber] = useState('');
   const [waIsActive, setWaIsActive] = useState(false);
   
-  // Audio Settings
-  const { settings: audioSettings, updateSettings: setAudioSettings } = useAudioSettings(selectedCompanyId);
-
   // Tab state - default to 'images' for non-admins
   const [activeTab, setActiveTab] = useState<TabId>('images'); // Default inicial seguro
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -209,6 +206,13 @@ function ConfigMode() {
   const selectedCompany = useMemo(
     () => companies.find((company) => company.id === selectedCompanyId) ?? null,
     [companies, selectedCompanyId],
+  );
+
+  // Audio Settings (persistLocal: grava no Supabase; TV lê só do servidor)
+  const { settings: audioSettings, updateSettings: setAudioSettings, flushRemoteAudioSettings } = useAudioSettings(
+    selectedCompanyId,
+    selectedCompany?.audio_settings ?? null,
+    { persistLocal: true },
   );
 
   const refreshCompanies = useCallback(async () => {
@@ -579,14 +583,28 @@ function ConfigMode() {
       await updateCompanyDuration(selectedCompanyId, Number(durationInput));
       await updateCompanyTransition(selectedCompanyId, transitionTypeInput, Number(transitionDurationInput), imageFitModeInput);
       await updateCompanyTicker(selectedCompanyId, tickerTextInput, tickerActiveInput);
+      await flushRemoteAudioSettings();
       await refreshCompanies();
-      setFeedback('Configurações salvas com sucesso.');
+      setFeedback('Configurações salvas (imagem, transições, letreiro e mixagem de áudio).');
     } catch (error) {
       setFeedback((error as Error).message);
     } finally {
       setBusy(false);
     }
-  }, [durationInput, transitionTypeInput, transitionDurationInput, imageFitModeInput, tickerTextInput, tickerActiveInput, isDurationValid, isTransitionValid, isTotalTimeValid, refreshCompanies, selectedCompanyId]);
+  }, [
+    durationInput,
+    transitionTypeInput,
+    transitionDurationInput,
+    imageFitModeInput,
+    tickerTextInput,
+    tickerActiveInput,
+    isDurationValid,
+    isTransitionValid,
+    isTotalTimeValid,
+    refreshCompanies,
+    selectedCompanyId,
+    flushRemoteAudioSettings,
+  ]);
 
   const handlePreset = useCallback((duration: string, type: string, transDuration: string, fitMode: string = 'contain') => {
     setDurationInput(duration);
@@ -1279,17 +1297,6 @@ function ConfigMode() {
                   )}
                 </div>
               </div>
-
-              {/* Botão Salvar Configurações */}
-              <div style={{ marginTop: 'var(--space-4)', display: 'flex', justifyContent: 'flex-end' }}>
-                <button 
-                  type="button" 
-                  onClick={() => void handleSaveDuration()} 
-                  disabled={busy || !isDurationValid || !isTransitionValid || !isTotalTimeValid}
-                >
-                  Salvar Configurações
-                </button>
-              </div>
               </article>
 
               {/* Seção: Letreiro */}
@@ -1485,6 +1492,19 @@ function ConfigMode() {
                       Testar Ducking Agora
                     </button>
                   </div>
+                </div>
+
+                <div style={{ marginTop: 'var(--space-4)', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 'var(--space-2)' }}>
+                  <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)', textAlign: 'right', maxWidth: '28rem' }}>
+                    Grava na TV: fotos (tempo e transição), letreiro e mixagem de áudio das seções acima.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => void handleSaveDuration()}
+                    disabled={busy || !isDurationValid || !isTransitionValid || !isTotalTimeValid}
+                  >
+                    Salvar Configurações
+                  </button>
                 </div>
               </article>
             </>
@@ -1973,7 +1993,9 @@ function TvMode({ accessCode }: { accessCode: string }) {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
   
-  const { settings: audioSettings } = useAudioSettings(company?.id ?? '');
+  const { settings: audioSettings } = useAudioSettings(company?.id ?? '', company?.audio_settings ?? null, {
+    persistLocal: false,
+  });
   
   // Audio Playback Logic via Custom Hook
   useAudioMixer(music, voiceovers, audioSettings);
@@ -2001,7 +2023,25 @@ function TvMode({ accessCode }: { accessCode: string }) {
 
       const assets = await fetchAssets(activeCompany.id);
       
-      setCompany(prev => JSON.stringify(prev) === JSON.stringify(activeCompany) ? prev : activeCompany);
+      setCompany((prev) => {
+        if (!prev || prev.id !== activeCompany.id) return activeCompany;
+        const a = prev;
+        const b = activeCompany;
+        const audioA = JSON.stringify(a.audio_settings ?? null);
+        const audioB = JSON.stringify(b.audio_settings ?? null);
+        if (
+          a.transition_type !== b.transition_type ||
+          a.transition_duration_seconds !== b.transition_duration_seconds ||
+          a.image_duration_seconds !== b.image_duration_seconds ||
+          a.image_fit_mode !== b.image_fit_mode ||
+          a.ticker_text !== b.ticker_text ||
+          a.ticker_active !== b.ticker_active ||
+          audioA !== audioB
+        ) {
+          return activeCompany;
+        }
+        return prev;
+      });
       setImages(prev => JSON.stringify(prev) === JSON.stringify(assets.images) ? prev : assets.images);
       setMusic(prev => JSON.stringify(prev) === JSON.stringify(assets.music) ? prev : assets.music);
       setVoiceovers(prev => JSON.stringify(prev) === JSON.stringify(assets.voiceovers) ? prev : assets.voiceovers);
@@ -2093,7 +2133,7 @@ function TvMode({ accessCode }: { accessCode: string }) {
 
       {currentImage ? (
         <div 
-          key={currentImage.id}
+          key={`${currentImage.id}-${transitionType}-${transitionDuration}-${photoDuration}`}
           className={`tv-image-container transition-${transitionType}`}
           style={{
             animationDuration: `${photoDuration + transitionDuration}s`,

@@ -1,3 +1,12 @@
+export type AudioSettings = {
+  musicBaseVolume: number; // 0.0 to 1.0
+  musicDuckedVolume: number; // 0.0 to 1.0
+  voiceoverVolume: number; // 0.0 to 1.0
+  duckingFadeOutTime: number; // seconds (time to reduce volume)
+  duckingFadeInTime: number; // seconds (time to restore volume)
+  voiceoverIntervalMinutes: number; // minutes between voiceovers
+};
+
 export type Company = {
   id: string;
   name: string;
@@ -8,6 +17,8 @@ export type Company = {
   image_fit_mode?: 'contain' | 'cover';
   ticker_text?: string;
   ticker_active?: boolean;
+  /** Mixagem de áudio sincronizada com TVs (JSON no Supabase). */
+  audio_settings?: Partial<AudioSettings> | null;
   created_at: string;
 };
 
@@ -61,15 +72,6 @@ export type VideoAsset = {
 };
 
 export type MediaKind = 'music' | 'voiceovers' | 'videos';
-
-export type AudioSettings = {
-  musicBaseVolume: number; // 0.0 to 1.0
-  musicDuckedVolume: number; // 0.0 to 1.0
-  voiceoverVolume: number; // 0.0 to 1.0
-  duckingFadeOutTime: number; // seconds (time to reduce volume)
-  duckingFadeInTime: number; // seconds (time to restore volume)
-  voiceoverIntervalMinutes: number; // minutes between voiceovers
-};
 
 export type CompanyUsage = {
   id: string;

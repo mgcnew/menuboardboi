@@ -1,5 +1,19 @@
 import { createClient } from '@supabase/supabase-js';
-import type { AudioAsset, Company, ImageAsset, MediaKind, Profile, CompanyUsage, UserRole, WhatsAppCredentials, WhatsAppBanner, WhatsAppPostTemplate, WhatsAppContact, WhatsAppPost } from '../types';
+import type {
+  AudioAsset,
+  AudioSettings,
+  Company,
+  ImageAsset,
+  MediaKind,
+  Profile,
+  CompanyUsage,
+  UserRole,
+  WhatsAppCredentials,
+  WhatsAppBanner,
+  WhatsAppPostTemplate,
+  WhatsAppContact,
+  WhatsAppPost,
+} from '../types';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -28,7 +42,9 @@ export async function listCompanies() {
   const client = assertSupabase();
   const { data, error } = await client
     .from('companies')
-    .select('id, name, access_code, image_duration_seconds, transition_type, transition_duration_seconds, image_fit_mode, ticker_text, ticker_active, created_at')
+    .select(
+      'id, name, access_code, image_duration_seconds, transition_type, transition_duration_seconds, image_fit_mode, ticker_text, ticker_active, audio_settings, created_at',
+    )
     .order('name');
 
   if (error) {
@@ -58,7 +74,9 @@ export async function createCompany(name: string) {
   const { data, error } = await client
     .from('companies')
     .insert({ name: name.trim(), access_code })
-    .select('id, name, access_code, image_duration_seconds, transition_type, transition_duration_seconds, image_fit_mode, created_at')
+    .select(
+      'id, name, access_code, image_duration_seconds, transition_type, transition_duration_seconds, image_fit_mode, ticker_text, ticker_active, audio_settings, created_at',
+    )
     .single();
 
   if (error) {
@@ -72,7 +90,9 @@ export async function getCompanyByCode(code: string) {
   const client = assertSupabase();
   const { data, error } = await client
     .from('companies')
-    .select('id, name, access_code, image_duration_seconds, transition_type, transition_duration_seconds, image_fit_mode, ticker_text, ticker_active, created_at')
+    .select(
+      'id, name, access_code, image_duration_seconds, transition_type, transition_duration_seconds, image_fit_mode, ticker_text, ticker_active, audio_settings, created_at',
+    )
     .eq('access_code', code)
     .single();
 
@@ -119,6 +139,18 @@ export async function updateCompanyTicker(companyId: string, text: string, activ
       ticker_text: text,
       ticker_active: active
     })
+    .eq('id', companyId);
+
+  if (error) {
+    throw error;
+  }
+}
+
+export async function updateCompanyAudioSettings(companyId: string, audioSettings: AudioSettings) {
+  const client = assertSupabase();
+  const { error } = await client
+    .from('companies')
+    .update({ audio_settings: audioSettings })
     .eq('id', companyId);
 
   if (error) {

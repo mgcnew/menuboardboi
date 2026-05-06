@@ -3,6 +3,9 @@ import { AudioAsset, AudioSettings } from '../types';
 import { getFileName, shuffleArray } from '../lib/utils';
 
 export function useAudioMixer(music: AudioAsset[], voiceovers: AudioAsset[], settings: AudioSettings) {
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+
   const musicPlayerRef = useRef<HTMLAudioElement | null>(null);
   const voicePlayerRef = useRef<HTMLAudioElement | null>(null);
   
@@ -59,14 +62,14 @@ export function useAudioMixer(music: AudioAsset[], voiceovers: AudioAsset[], set
     voiceoverTickerRef.current = window.setInterval(() => {
       if (!isMusicPlayingRef.current || isVoiceoverPlayingRef.current) return;
 
-      const intervalMs = Math.max(1, settings.voiceoverIntervalMinutes) * 60 * 1000;
+      const intervalMs = Math.max(1, settingsRef.current.voiceoverIntervalMinutes) * 60 * 1000;
       elapsedMusicMsRef.current += 1000;
       if (elapsedMusicMsRef.current < intervalMs) return;
 
       elapsedMusicMsRef.current = 0;
       startVoiceoverRef.current();
     }, 1000);
-  }, [settings.voiceoverIntervalMinutes]);
+  }, []);
 
   const stopVoiceoverTicker = useCallback(() => {
     if (voiceoverTickerRef.current !== null) {
@@ -205,6 +208,21 @@ export function useAudioMixer(music: AudioAsset[], voiceovers: AudioAsset[], set
       void startVoiceover();
     };
   }, [startVoiceover]);
+
+  // Volumes em tempo real (painel → TV via Realtime) — não interfere durante fade ativo
+  useEffect(() => {
+    if (volumeFadeIntervalRef.current !== null) return;
+    const music = musicPlayerRef.current;
+    const voice = voicePlayerRef.current;
+    if (music) {
+      music.volume = isVoiceoverPlayingRef.current
+        ? settings.musicDuckedVolume
+        : settings.musicBaseVolume;
+    }
+    if (voice) {
+      voice.volume = settings.voiceoverVolume;
+    }
+  }, [settings.musicBaseVolume, settings.musicDuckedVolume, settings.voiceoverVolume]);
 
   // Efeito de inicialização estrita: Começa o ciclo (Música)
   useEffect(() => {
