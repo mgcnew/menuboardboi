@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Plus, Users, MessageSquare, Image as ImageIcon,
+  Plus, Users,
   Clock, CheckCircle, AlertCircle, XCircle,
   Send, RefreshCw, ChevronDown, ChevronUp, RotateCcw
 } from 'lucide-react';

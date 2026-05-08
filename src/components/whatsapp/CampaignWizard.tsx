@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import {
-  Send, Image as ImageIcon, MessageSquare, Eye, X, Check,
-  ArrowLeft, ArrowRight, Radio, Users, ChevronDown
+  Send, Eye, X, Check,
+  ArrowLeft, ArrowRight, Radio
 } from 'lucide-react';
 import type { WhatsAppBanner, WhatsAppPostTemplate, WhatsAppContact } from '../../types';
 import { createWhatsAppPost } from '../../lib/supabase';
