@@ -1,10 +1,10 @@
 import { useState, useMemo } from 'react';
 import {
   Send, Eye, X, Check,
-  ArrowLeft, ArrowRight, Radio
+  ArrowLeft, ArrowRight, Radio, Zap, Loader2
 } from 'lucide-react';
 import type { WhatsAppBanner, WhatsAppPostTemplate, WhatsAppContact } from '../../types';
-import { createWhatsAppPost } from '../../lib/supabase';
+import { createWhatsAppPost, executeCampaignSend } from '../../lib/supabase';
 
 type CampaignType = 'status' | 'direct';
 type WizardStep = 1 | 2 | 3;
@@ -18,20 +18,22 @@ interface CampaignWizardProps {
   onSuccess: () => void;
   showToast: (msg: string, type: 'success' | 'error' | 'info') => void;
   goToLibrary: () => void;
+  initialBannerId?: string | null;
 }
 
 const CHAR_LIMIT = 4096;
 
 export function CampaignWizard({
   companyId, banners, templates, contacts,
-  onClose, onSuccess, showToast, goToLibrary
+  onClose, onSuccess, showToast, goToLibrary, initialBannerId
 }: CampaignWizardProps) {
-  const [campaignType, setCampaignType] = useState<CampaignType | null>(null);
+  const [campaignType, setCampaignType] = useState<CampaignType | null>(initialBannerId ? 'direct' : null);
   const [step, setStep] = useState<WizardStep>(1);
   const [isSaving, setIsSaving] = useState(false);
+  const [sendProgress, setSendProgress] = useState<{ sent: number; failed: number; total: number } | null>(null);
 
   // Step 1 state
-  const [selectedBanner, setSelectedBanner] = useState('');
+  const [selectedBanner, setSelectedBanner] = useState(initialBannerId || '');
   const [selectedTemplate, setSelectedTemplate] = useState('');
   const [messageText, setMessageText] = useState('');
 
@@ -101,20 +103,50 @@ export function CampaignWizard({
     }
     setIsSaving(true);
     try {
-      await createWhatsAppPost(companyId, {
+      const post = await createWhatsAppPost(companyId, {
+        campaign_type: campaignType || 'direct',
         banner_id: selectedBanner || null,
         template_id: selectedTemplate || null,
         message_text: selectedTemplate ? null : messageText,
         recipient_ids: selectedContacts,
         scheduled_at: scheduledAt ? new Date(scheduledAt).toISOString() : null
       });
-      showToast(scheduledAt ? 'Campanha agendada!' : 'Campanha enviada!', 'success');
+
+      // If not scheduled, execute the send immediately via W-API
+      if (!scheduledAt) {
+        setSendProgress({ sent: 0, failed: 0, total: selectedContacts.length });
+        try {
+          const result = await executeCampaignSend(
+            companyId,
+            post,
+            selectedBannerObj?.file_url || null,
+            selectedTemplate ? (selectedTemplateObj?.message_text || null) : (messageText || null)
+          );
+          setSendProgress({ sent: result.sent, failed: result.failed, total: selectedContacts.length });
+
+          if (result.failed === 0) {
+            showToast(`✅ Campanha enviada! ${result.sent} mensagem(ns) entregue(s).`, 'success');
+          } else if (result.sent > 0) {
+            showToast(`⚠️ Enviada parcialmente: ${result.sent} ok, ${result.failed} falha(s).`, 'info');
+          } else {
+            showToast(`❌ Falha no envio. Verifique as credenciais W-API.`, 'error');
+          }
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : 'Erro desconhecido';
+          showToast(`Erro ao enviar: ${errMsg}`, 'error');
+        }
+      } else {
+        showToast('📅 Campanha agendada com sucesso!', 'success');
+      }
+
       onSuccess();
       onClose();
-    } catch {
-      showToast('Erro ao criar campanha.', 'error');
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : 'Erro desconhecido';
+      showToast(`Erro ao criar campanha: ${errMsg}`, 'error');
     } finally {
       setIsSaving(false);
+      setSendProgress(null);
     }
   };
 
@@ -142,11 +174,17 @@ export function CampaignWizard({
             <button
               type="button"
               className="campaign-type-card"
-              onClick={() => setCampaignType('status')}
+              style={{ opacity: 0.5, cursor: 'not-allowed', position: 'relative' }}
+              onClick={() => showToast('Postar no Status será disponibilizado em breve via automação.', 'info')}
             >
               <div className="type-icon"><Radio size={24} /></div>
               <span className="type-title">Postar no Status</span>
-              <span className="type-desc">Publique imagens e textos no seu status do WhatsApp para todos os contatos verem.</span>
+              <span className="type-desc">Publique imagens e textos no seu status do WhatsApp.</span>
+              <span style={{
+                position: 'absolute', top: '8px', right: '8px',
+                background: '#d97706', color: '#fff', fontSize: '0.65rem',
+                padding: '2px 8px', borderRadius: '999px', fontWeight: 600
+              }}>EM BREVE</span>
             </button>
             <button
               type="button"
@@ -155,7 +193,7 @@ export function CampaignWizard({
             >
               <div className="type-icon"><Send size={24} /></div>
               <span className="type-title">Enviar Mensagem</span>
-              <span className="type-desc">Envie mensagens diretas com banners e textos para contatos selecionados.</span>
+              <span className="type-desc">Envie mensagens diretas com banners e textos para contatos selecionados via W-API.</span>
             </button>
           </div>
         </div>
@@ -183,7 +221,9 @@ export function CampaignWizard({
           {step === 1 && (
             <div className="fade-in">
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: 'var(--space-2)' }}>
-                <span className="tag">{campaignType === 'status' ? 'Status' : 'Mensagem Direta'}</span>
+                <span className="tag" style={{ background: '#dcfce7', color: '#166534' }}>
+                  💬 Mensagem Direta
+                </span>
                 <button type="button" className="secondary" style={{ padding: '2px 8px', fontSize: '0.78rem' }}
                   onClick={() => { setCampaignType(null); setStep(1); }}>Trocar tipo</button>
               </div>
@@ -369,7 +409,9 @@ export function CampaignWizard({
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
                     <div>
                       <span className="eyebrow">Tipo</span>
-                      <p style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{campaignType === 'status' ? '📡 Postar no Status' : '💬 Mensagem Direta'}</p>
+                      <p style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
+                        💬 Mensagem Direta (W-API)
+                      </p>
                     </div>
                     <div>
                       <span className="eyebrow">Banner</span>
@@ -411,12 +453,31 @@ export function CampaignWizard({
                   </div>
                 </div>
               </div>
+
+              {/* Send progress */}
+              {sendProgress && (
+                <div style={{
+                  marginTop: 'var(--space-3)', padding: 'var(--space-3)',
+                  background: 'var(--bg-subtle)', borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--border-subtle)'
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                    <Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} />
+                    <strong style={{ fontSize: '0.88rem' }}>Enviando via W-API...</strong>
+                  </div>
+                  <div style={{ display: 'flex', gap: 'var(--space-3)', fontSize: '0.85rem' }}>
+                    <span style={{ color: '#059669' }}>✅ {sendProgress.sent} enviado(s)</span>
+                    {sendProgress.failed > 0 && <span style={{ color: '#dc2626' }}>❌ {sendProgress.failed} falha(s)</span>}
+                    <span style={{ color: 'var(--text-secondary)' }}>de {sendProgress.total} total</span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
           {/* Wizard Navigation */}
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 'var(--space-4)', paddingTop: 'var(--space-3)', borderTop: '1px solid var(--border-subtle)' }}>
-            <button type="button" className="secondary" onClick={() => step === 1 ? setCampaignType(null) : setStep((step - 1) as WizardStep)}>
+            <button type="button" className="secondary" onClick={() => step === 1 ? setCampaignType(null) : setStep((step - 1) as WizardStep)} disabled={isSaving}>
               <ArrowLeft size={16} /> {step === 1 ? 'Trocar tipo' : 'Voltar'}
             </button>
             {step < 3 ? (
@@ -434,8 +495,15 @@ export function CampaignWizard({
                 className="primary"
                 disabled={isSaving}
                 onClick={() => void handleSubmit()}
+                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
               >
-                {isSaving ? 'Processando...' : (scheduledAt ? '📅 Agendar Campanha' : '🚀 Enviar Agora')}
+                {isSaving ? (
+                  <><Loader2 size={16} style={{ animation: 'spin 1s linear infinite' }} /> Processando...</>
+                ) : scheduledAt ? (
+                  <><Zap size={16} /> Agendar Campanha</>
+                ) : (
+                  <><Send size={16} /> Enviar Agora via W-API</>
+                )}
               </button>
             )}
           </div>

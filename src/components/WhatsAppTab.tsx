@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Plus, Users,
   Clock, CheckCircle, AlertCircle, XCircle,
-  Send, RefreshCw, ChevronDown, ChevronUp, RotateCcw
+  Send, RefreshCw, ChevronDown, ChevronUp, RotateCcw,
+  Radio, MessageSquare
 } from 'lucide-react';
 import type {
   WhatsAppBanner, WhatsAppPostTemplate, WhatsAppContact, WhatsAppPost
@@ -47,6 +48,7 @@ export function WhatsAppTab({ companyId }: WhatsAppTabProps) {
   const [showWizard, setShowWizard] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [expandedPost, setExpandedPost] = useState<string | null>(null);
+  const [quickBannerId, setQuickBannerId] = useState<string | null>(null);
 
   // Toast
   const [toast, setToast] = useState<{ msg: string; type: ToastType } | null>(null);
@@ -115,6 +117,7 @@ export function WhatsAppTab({ companyId }: WhatsAppTabProps) {
   const handleRetry = async (post: WhatsAppPost) => {
     try {
       await createWhatsAppPost(companyId, {
+        campaign_type: post.campaign_type || 'direct',
         banner_id: post.banner_id,
         template_id: post.template_id,
         message_text: post.message_text,
@@ -211,10 +214,11 @@ export function WhatsAppTab({ companyId }: WhatsAppTabProps) {
               banners={banners}
               templates={templates}
               contacts={contacts}
-              onClose={() => setShowWizard(false)}
+              onClose={() => { setShowWizard(false); setQuickBannerId(null); }}
               onSuccess={() => void reloadPosts()}
               showToast={showToast}
               goToLibrary={goToLibrary}
+              initialBannerId={quickBannerId}
             />
           )}
 
@@ -262,6 +266,16 @@ export function WhatsAppTab({ companyId }: WhatsAppTabProps) {
                         <StatusIcon size={20} style={{ color: cfg.color, flexShrink: 0 }} />
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            {/* Campaign type badge */}
+                            {post.campaign_type === 'status' ? (
+                              <span className="tag" style={{ fontSize: '0.62rem', background: '#fef3c7', color: '#92400e', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                <Radio size={10} /> Status
+                              </span>
+                            ) : (
+                              <span className="tag" style={{ fontSize: '0.62rem', background: '#dbeafe', color: '#1e40af', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                <MessageSquare size={10} /> Direta
+                              </span>
+                            )}
                             <strong style={{ fontSize: '0.9rem' }}>
                               {post.message_text
                                 ? post.message_text.slice(0, 50) + (post.message_text.length > 50 ? '...' : '')
@@ -305,9 +319,9 @@ export function WhatsAppTab({ companyId }: WhatsAppTabProps) {
                               </div>
                             </div>
                           )}
-                          {(post as any).last_error && (
+                          {post.last_error && (
                             <div className="post-error">
-                              <strong>Erro:</strong> {(post as any).last_error}
+                              <strong>Erro:</strong> {post.last_error}
                             </div>
                           )}
                         </div>
@@ -334,6 +348,11 @@ export function WhatsAppTab({ companyId }: WhatsAppTabProps) {
           reloadTemplates={() => void reloadTemplates()}
           reloadContacts={() => void reloadContacts()}
           showToast={showToast}
+          onQuickSend={(bannerId) => {
+            setQuickBannerId(bannerId);
+            setView('dashboard');
+            setShowWizard(true);
+          }}
         />
       )}
     </div>

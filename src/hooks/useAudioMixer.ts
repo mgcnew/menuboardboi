@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { AudioAsset, AudioSettings } from '../types';
 import { getFileName, shuffleArray } from '../lib/utils';
+import { getCachedAudioUrl } from '../lib/audioCache';
 
 /**
  * ─────────────────────────────────────────────────────────────
@@ -146,7 +147,13 @@ export function useAudioMixer(music: AudioAsset[], voiceovers: AudioAsset[], set
     musicPlayer.onended = null;
     musicPlayer.onerror = null;
 
-    musicPlayer.src = nextMusic.file_url;
+    try {
+      const cachedUrl = await getCachedAudioUrl(nextMusic.file_url);
+      musicPlayer.src = cachedUrl;
+    } catch (err) {
+      console.warn('[Audio Mixer] Erro no cache da música, usando url original.', err);
+      musicPlayer.src = nextMusic.file_url;
+    }
 
     // ★ CORREÇÃO PRINCIPAL: Volume inicial respeita estado de ducking
     musicPlayer.volume = getCurrentMusicVolume();
@@ -192,7 +199,7 @@ export function useAudioMixer(music: AudioAsset[], voiceovers: AudioAsset[], set
   /**
    * Efetivamente toca a locução (chamado APÓS o fade-out da música).
    */
-  const playVoiceoverTrack = useCallback((voiceAsset: AudioAsset) => {
+  const playVoiceoverTrack = useCallback(async (voiceAsset: AudioAsset) => {
     if (!voicePlayerRef.current) {
       voicePlayerRef.current = new Audio();
     }
@@ -203,7 +210,15 @@ export function useAudioMixer(music: AudioAsset[], voiceovers: AudioAsset[], set
     voicePlayer.onerror = null;
 
     const s = settingsRef.current;
-    voicePlayer.src = voiceAsset.file_url;
+    
+    try {
+      const cachedUrl = await getCachedAudioUrl(voiceAsset.file_url);
+      voicePlayer.src = cachedUrl;
+    } catch (err) {
+      console.warn('[Audio Mixer] Erro no cache da locução, usando url original.', err);
+      voicePlayer.src = voiceAsset.file_url;
+    }
+    
     voicePlayer.volume = s.voiceoverVolume;
 
     const restoreMusic = () => {
@@ -280,7 +295,7 @@ export function useAudioMixer(music: AudioAsset[], voiceovers: AudioAsset[], set
     // Fade out da música, e quando terminar, tocar a locução
     fadeMusicVolume(s.musicDuckedVolume, s.duckingFadeOutTime, () => {
       // Callback: fade completou, agora inicia a locução
-      playVoiceoverTrack(nextVoice);
+      void playVoiceoverTrack(nextVoice);
     });
   }, [fadeMusicVolume, playVoiceoverTrack]);
 

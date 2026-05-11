@@ -131,6 +131,7 @@ export type WhatsAppApprovalStatus = 'draft' | 'pending_approval' | 'approved' |
 export type WhatsAppPost = {
   id: string;
   company_id: string;
+  campaign_type: 'status' | 'direct';
   banner_id?: string | null;
   template_id?: string | null;
   message_text?: string | null;
@@ -142,6 +143,7 @@ export type WhatsAppPost = {
   approval_status: WhatsAppApprovalStatus;
   approved_by?: string | null;
   approved_at?: string | null;
+  last_error?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -152,6 +154,7 @@ export type WhatsAppCredentials = {
   provider: string;
   api_key: string;
   instance_id?: string | null;
+  base_url?: string | null;
   phone_number?: string | null;
   is_active: boolean;
   created_at: string;

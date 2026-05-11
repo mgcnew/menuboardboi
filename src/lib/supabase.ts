@@ -818,6 +818,7 @@ export async function listWhatsAppPosts(companyId: string): Promise<WhatsAppPost
 export async function createWhatsAppPost(
   companyId: string,
   payload: {
+    campaign_type?: 'status' | 'direct';
     banner_id?: string | null;
     template_id?: string | null;
     message_text?: string | null;
@@ -830,6 +831,7 @@ export async function createWhatsAppPost(
     .from('whatsapp_posts')
     .insert({
       company_id: companyId,
+      campaign_type: payload.campaign_type || 'direct',
       banner_id: payload.banner_id || null,
       template_id: payload.template_id || null,
       message_text: payload.message_text || null,
@@ -853,4 +855,135 @@ export async function cancelWhatsAppPost(postId: string): Promise<void> {
     .eq('id', postId);
   
   if (error) throw error;
+}
+
+export async function updateWhatsAppPostStatus(
+  postId: string,
+  status: string,
+  lastError?: string | null
+): Promise<void> {
+  const client = assertSupabase();
+  const updates: Record<string, unknown> = {
+    status,
+    updated_at: new Date().toISOString(),
+  };
+  if (status === 'sent') updates.sent_at = new Date().toISOString();
+  if (lastError !== undefined) updates.last_error = lastError;
+
+  const { error } = await client
+    .from('whatsapp_posts')
+    .update(updates)
+    .eq('id', postId);
+
+  if (error) throw error;
+}
+
+// ── W-API Integration ──
+
+const WAPI_BASE = 'https://api.w-api.app/v1';
+
+export async function sendWApiText(
+  credentials: WhatsAppCredentials,
+  phone: string,
+  message: string,
+  delayMessage = 3
+): Promise<{ messageId: string; insertedId: string }> {
+  const url = `${credentials.base_url || WAPI_BASE}/message/send-text?instanceId=${credentials.instance_id}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${credentials.api_key}`,
+    },
+    body: JSON.stringify({ phone, message, delayMessage }),
+  });
+
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw new Error(`W-API send-text error ${res.status}: ${errBody}`);
+  }
+
+  return res.json();
+}
+
+export async function sendWApiImage(
+  credentials: WhatsAppCredentials,
+  phone: string,
+  imageUrl: string,
+  caption?: string,
+  delayMessage = 3
+): Promise<{ messageId: string; insertedId: string }> {
+  const url = `${credentials.base_url || WAPI_BASE}/message/send-image?instanceId=${credentials.instance_id}`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${credentials.api_key}`,
+    },
+    body: JSON.stringify({ phone, image: imageUrl, caption: caption || '', delayMessage }),
+  });
+
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw new Error(`W-API send-image error ${res.status}: ${errBody}`);
+  }
+
+  return res.json();
+}
+
+/**
+ * Sends a campaign to all recipients via W-API.
+ * Returns { sent: number, failed: number, errors: string[] }
+ */
+export async function executeCampaignSend(
+  companyId: string,
+  post: WhatsAppPost,
+  bannerUrl?: string | null,
+  messageText?: string | null
+): Promise<{ sent: number; failed: number; errors: string[] }> {
+  const credentials = await getWhatsAppCredentials(companyId);
+  if (!credentials || !credentials.is_active || !credentials.instance_id) {
+    throw new Error('Credenciais W-API não configuradas ou inativas. Configure em Biblioteca > Configurações.');
+  }
+
+  const contacts = await listWhatsAppContacts(companyId);
+  const recipientContacts = contacts.filter(c => post.recipient_ids.includes(c.id));
+
+  let sent = 0;
+  let failed = 0;
+  const errors: string[] = [];
+
+  // Mark as processing
+  await updateWhatsAppPostStatus(post.id, 'processing');
+
+  for (const contact of recipientContacts) {
+    const phone = contact.phone_numbers[0];
+    if (!phone) {
+      failed++;
+      errors.push(`${contact.name}: sem telefone`);
+      continue;
+    }
+
+    try {
+      if (bannerUrl) {
+        // Send image with optional caption
+        await sendWApiImage(credentials, phone, bannerUrl, messageText || undefined);
+      } else if (messageText) {
+        // Send text only
+        await sendWApiText(credentials, phone, messageText);
+      }
+      sent++;
+    } catch (err) {
+      failed++;
+      const errMsg = err instanceof Error ? err.message : String(err);
+      errors.push(`${contact.name}: ${errMsg}`);
+    }
+  }
+
+  // Update final status
+  const finalStatus = failed === recipientContacts.length ? 'failed' : 'sent';
+  const errorSummary = errors.length > 0 ? errors.slice(0, 5).join('; ') : null;
+  await updateWhatsAppPostStatus(post.id, finalStatus, errorSummary);
+
+  return { sent, failed, errors };
 }

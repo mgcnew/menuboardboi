@@ -1,7 +1,7 @@
 import { useState, useRef, useMemo, useCallback } from 'react';
 import {
   Users, MessageSquare, Image as ImageIcon, Plus, Trash2, Edit2,
-  UploadCloud, Search, X, Copy, Eye
+  UploadCloud, Search, X, Copy, Eye, Send
 } from 'lucide-react';
 import type { WhatsAppBanner, WhatsAppPostTemplate, WhatsAppContact } from '../../types';
 import {
@@ -26,9 +26,10 @@ interface LibraryViewProps {
   reloadTemplates: () => void;
   reloadContacts: () => void;
   showToast: ToastFn;
+  onQuickSend?: (bannerId: string) => void;
 }
 
-export function LibraryView({ companyId, section, setSection, banners, templates, contacts, reloadBanners, reloadTemplates, reloadContacts, showToast }: LibraryViewProps) {
+export function LibraryView({ companyId, section, setSection, banners, templates, contacts, reloadBanners, reloadTemplates, reloadContacts, showToast, onQuickSend }: LibraryViewProps) {
   return (
     <div className="library-layout">
       <aside className="library-sidebar">
@@ -46,7 +47,7 @@ export function LibraryView({ companyId, section, setSection, banners, templates
       <main className="library-content fade-in">
         {section === 'contacts' && <ContactsSection companyId={companyId} contacts={contacts} onReload={reloadContacts} showToast={showToast} />}
         {section === 'templates' && <TemplatesSection companyId={companyId} templates={templates} onReload={reloadTemplates} showToast={showToast} />}
-        {section === 'banners' && <BannersSection companyId={companyId} banners={banners} onReload={reloadBanners} showToast={showToast} />}
+        {section === 'banners' && <BannersSection companyId={companyId} banners={banners} onReload={reloadBanners} showToast={showToast} onQuickSend={onQuickSend} />}
       </main>
     </div>
   );
@@ -360,7 +361,7 @@ function TemplatesSection({ companyId, templates, onReload, showToast }: { compa
 
 // ── BANNERS ──
 
-function BannersSection({ companyId, banners, onReload, showToast }: { companyId: string; banners: WhatsAppBanner[]; onReload: () => void; showToast: ToastFn }) {
+function BannersSection({ companyId, banners, onReload, showToast, onQuickSend }: { companyId: string; banners: WhatsAppBanner[]; onReload: () => void; showToast: ToastFn; onQuickSend?: (bannerId: string) => void }) {
   const [isUploading, setIsUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
@@ -442,11 +443,21 @@ function BannersSection({ companyId, banners, onReload, showToast }: { companyId
                   <span className={`tag ${banner.is_active ? 'success' : ''}`} style={{ fontSize: '0.65rem' }}>{banner.is_active ? 'ATIVO' : 'INATIVO'}</span>
                 </div>
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{formatBytes(banner.file_size)}</span>
-                <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                  <button type="button" className="secondary" style={{ flex: 1, padding: '4px' }} onClick={() => handleToggle(banner)}>
+                <div style={{ display: 'flex', gap: '6px', marginTop: '8px' }}>
+                  <button type="button" className="secondary" style={{ flex: 1, padding: '4px', fontSize: '0.78rem' }} onClick={() => handleToggle(banner)}>
                     {banner.is_active ? 'Desativar' : 'Ativar'}
                   </button>
-                  <button type="button" className="danger" style={{ padding: '4px 8px' }} onClick={() => handleDelete(banner)}><Trash2 size={16} /></button>
+                  {onQuickSend && (
+                    <button type="button" className="primary" title="Enviar Campanha Rápida" style={{ padding: '4px 8px', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                      onClick={() => onQuickSend(banner.id)}>
+                      <Send size={14} /> Enviar
+                    </button>
+                  )}
+                  <button type="button" className="secondary" title="Copiar URL do banner" style={{ padding: '4px 8px', fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                    onClick={() => { navigator.clipboard.writeText(banner.file_url); showToast('URL copiada!', 'success'); }}>
+                    <Copy size={14} />
+                  </button>
+                  <button type="button" className="danger" style={{ padding: '4px 8px' }} onClick={() => handleDelete(banner)}><Trash2 size={14} /></button>
                 </div>
               </div>
             </div>

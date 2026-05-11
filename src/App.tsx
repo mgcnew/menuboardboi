@@ -208,6 +208,7 @@ function ConfigMode() {
   const [previewResolution, setPreviewResolution] = useState<'landscape' | 'portrait' | 'square'>('landscape');
   const [currentlyPlayingMusic, setCurrentlyPlayingMusic] = useState<AudioAsset | null>(null);
   const [previewMusicId, setPreviewMusicId] = useState('');
+  const [currentlyPlayingVoiceover, setCurrentlyPlayingVoiceover] = useState<AudioAsset | null>(null);
   const [previewVoiceId, setPreviewVoiceId] = useState('');
   const previewMusicRef = useRef<HTMLAudioElement | null>(null);
   const previewVoiceRef = useRef<HTMLAudioElement | null>(null);
@@ -1116,106 +1117,138 @@ function ConfigMode() {
                     <code>tv_heartbeat</code> foi criada (veja <code>supabase/players_tv_manual.sql</code>).
                   </p>
                 ) : null}
-                {players.length > 0 ? (
-                  <ul className="asset-list" style={{ marginTop: 'var(--space-4)' }}>
-                    {players.map((player) => {
-                      const lastPing = new Date(player.last_ping_at);
-                      const now = new Date();
-                      const isOnline = (now.getTime() - lastPing.getTime()) < 3 * 60 * 1000;
-                      const mediaRaw = player.current_media_name;
-                      const mediaShort =
-                        mediaRaw && mediaRaw !== '—'
-                          ? getAudioDisplayName(mediaRaw)
-                          : null;
-                      
-                      const isRenaming = playerRenameDraft?.playerId === player.id;
+                {(() => {
+                  if (players.length === 0) return <EmptyState text="Nenhuma TV com sinal no momento." />;
+                  
+                  const now = new Date();
+                  const onlinePlayers = players.filter(p => (now.getTime() - new Date(p.last_ping_at).getTime()) < 3 * 60 * 1000);
+                  const recentPlayers = players.filter(p => {
+                    const diff = now.getTime() - new Date(p.last_ping_at).getTime();
+                    return diff >= 3 * 60 * 1000 && diff <= 12 * 60 * 60 * 1000;
+                  });
+                  const historyPlayers = players.filter(p => (now.getTime() - new Date(p.last_ping_at).getTime()) > 12 * 60 * 60 * 1000);
 
-                      return (
-                        <li key={player.id} className="asset-row" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', flexWrap: 'wrap' }}>
-                          <div
-                            title={isOnline ? 'Online' : 'Sem sinal recente'}
-                            style={{
-                              width: '10px',
-                              height: '10px',
-                              borderRadius: '50%',
-                              backgroundColor: isOnline ? 'var(--success)' : 'var(--danger)',
-                              flexShrink: 0,
-                            }}
-                          />
-                          <div className="asset-copy" style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', flex: '1 1 12rem', minWidth: 0 }}>
-                            {isRenaming ? (
-                              <div className="inline-group" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
-                                <input
-                                  type="text"
-                                  value={playerRenameDraft.name}
-                                  onChange={(e) => setPlayerRenameDraft({ playerId: player.id, name: e.target.value })}
-                                  aria-label="Novo nome da TV"
-                                  disabled={playerRenameSaving}
-                                  style={{ minWidth: '10rem' }}
-                                />
-                                <button
-                                  type="button"
-                                  disabled={playerRenameSaving || !selectedCompanyId}
-                                  onClick={() => {
-                                    if (!selectedCompanyId || !playerRenameDraft) return;
-                                    const name = playerRenameDraft.name.trim();
-                                    if (!name) {
-                                      setFeedback('Digite um nome para a TV.');
-                                      return;
+                  const renderPlayer = (player: Player, isOnline: boolean) => {
+                    const lastPing = new Date(player.last_ping_at);
+                    const mediaRaw = player.current_media_name;
+                    const mediaShort = mediaRaw && mediaRaw !== '—' ? getAudioDisplayName(mediaRaw) : null;
+                    const isRenaming = playerRenameDraft?.playerId === player.id;
+                    return (
+                      <li key={player.id} className="asset-row" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem 1rem', flexWrap: 'wrap' }}>
+                        <div
+                          title={isOnline ? 'Online' : 'Sem sinal recente'}
+                          style={{
+                            width: '10px',
+                            height: '10px',
+                            borderRadius: '50%',
+                            backgroundColor: isOnline ? 'var(--success)' : 'var(--danger)',
+                            flexShrink: 0,
+                          }}
+                        />
+                        <div className="asset-copy" style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', flex: '1 1 12rem', minWidth: 0 }}>
+                          {isRenaming ? (
+                            <div className="inline-group" style={{ flexWrap: 'wrap', alignItems: 'center' }}>
+                              <input
+                                type="text"
+                                value={playerRenameDraft.name}
+                                onChange={(e) => setPlayerRenameDraft({ playerId: player.id, name: e.target.value })}
+                                aria-label="Novo nome da TV"
+                                disabled={playerRenameSaving}
+                                style={{ minWidth: '10rem' }}
+                              />
+                              <button
+                                type="button"
+                                disabled={playerRenameSaving || !selectedCompanyId}
+                                onClick={() => {
+                                  if (!selectedCompanyId || !playerRenameDraft) return;
+                                  const name = playerRenameDraft.name.trim();
+                                  if (!name) {
+                                    setFeedback('Digite um nome para a TV.');
+                                    return;
+                                  }
+                                  setPlayerRenameSaving(true);
+                                  void (async () => {
+                                    try {
+                                      await updatePlayerName(selectedCompanyId, player.id, name);
+                                      setPlayerRenameDraft(null);
+                                      const data = await listPlayers(selectedCompanyId);
+                                      setPlayers(data);
+                                      setPlayersListError(null);
+                                      setFeedback('');
+                                    } catch (err) {
+                                      setFeedback(err instanceof Error ? err.message : String(err));
+                                    } finally {
+                                      setPlayerRenameSaving(false);
                                     }
-                                    setPlayerRenameSaving(true);
-                                    void (async () => {
-                                      try {
-                                        await updatePlayerName(selectedCompanyId, player.id, name);
-                                        setPlayerRenameDraft(null);
-                                        const data = await listPlayers(selectedCompanyId);
-                                        setPlayers(data);
-                                        setPlayersListError(null);
-                                        setFeedback('');
-                                      } catch (err) {
-                                        setFeedback(err instanceof Error ? err.message : String(err));
-                                      } finally {
-                                        setPlayerRenameSaving(false);
-                                      }
-                                    })();
-                                  }}
-                                >
-                                  Salvar
-                                </button>
-                                <button
-                                  type="button"
-                                  className="secondary"
-                                  disabled={playerRenameSaving}
-                                  onClick={() => setPlayerRenameDraft(null)}
-                                >
-                                  Cancelar
-                                </button>
-                              </div>
-                            ) : (
-                              <strong style={{ fontSize: '1rem' }}>{player.player_name}</strong>
-                            )}
-                            <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                              {isOnline ? 'Online' : 'Offline'} · sinal {formatTvSignalAge(lastPing, now)}
-                              {mediaShort ? ` · ${mediaShort}` : ''}
-                            </span>
-                          </div>
-                          {!isRenaming ? (
-                            <button
-                              type="button"
-                              className="secondary"
-                              style={{ flexShrink: 0, alignSelf: 'center' }}
-                              onClick={() => setPlayerRenameDraft({ playerId: player.id, name: player.player_name })}
-                            >
-                              Renomear
-                            </button>
-                          ) : null}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                ) : (
-                  <EmptyState text="Nenhuma TV com sinal no momento." />
-                )}
+                                  })();
+                                }}
+                              >
+                                Salvar
+                              </button>
+                              <button
+                                type="button"
+                                className="secondary"
+                                disabled={playerRenameSaving}
+                                onClick={() => setPlayerRenameDraft(null)}
+                              >
+                                Cancelar
+                              </button>
+                            </div>
+                          ) : (
+                            <strong style={{ fontSize: '1rem' }}>{player.player_name}</strong>
+                          )}
+                          <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                            {isOnline ? 'Online' : 'Offline'} · último sinal {lastPing.toLocaleDateString('pt-BR')} às {lastPing.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} ({formatTvSignalAge(lastPing, now)})
+                            {mediaShort ? ` · ${mediaShort}` : ''}
+                          </span>
+                        </div>
+                        {!isRenaming ? (
+                          <button
+                            type="button"
+                            className="secondary"
+                            style={{ flexShrink: 0, alignSelf: 'center' }}
+                            onClick={() => setPlayerRenameDraft({ playerId: player.id, name: player.player_name })}
+                          >
+                            Renomear
+                          </button>
+                        ) : null}
+                      </li>
+                    );
+                  };
+
+                  return (
+                    <div style={{ marginTop: 'var(--space-4)' }}>
+                      {onlinePlayers.length > 0 && (
+                        <div style={{ marginBottom: 'var(--space-4)' }}>
+                          <h4 style={{ marginBottom: 'var(--space-2)', color: 'var(--success)' }}>Online Agora</h4>
+                          <ul className="asset-list">
+                            {onlinePlayers.map(p => renderPlayer(p, true))}
+                          </ul>
+                        </div>
+                      )}
+                      
+                      {recentPlayers.length > 0 && (
+                        <div style={{ marginBottom: 'var(--space-4)' }}>
+                          <h4 style={{ marginBottom: 'var(--space-2)', color: 'var(--text-primary)' }}>Ativas nas últimas 12 horas</h4>
+                          <ul className="asset-list">
+                            {recentPlayers.map(p => renderPlayer(p, false))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {historyPlayers.length > 0 && (
+                        <details style={{ marginTop: 'var(--space-2)' }}>
+                          <summary style={{ cursor: 'pointer', fontWeight: 'bold', color: 'var(--text-secondary)', padding: 'var(--space-2) 0' }}>
+                            Histórico (Inativas há mais de 12 horas)
+                          </summary>
+                          <ul className="asset-list" style={{ marginTop: 'var(--space-2)' }}>
+                            {historyPlayers.map(p => renderPlayer(p, false))}
+                          </ul>
+                        </details>
+                      )}
+                    </div>
+                  );
+                })()}
               </article>
             ) : null}
 
@@ -1747,6 +1780,18 @@ function ConfigMode() {
                       >
                         →
                       </button>
+                      <a
+                        href={`${image.file_url}?download=`}
+                        download
+                        target="_blank"
+                        rel="noreferrer"
+                        className="secondary"
+                        style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none', padding: '0 0.5rem' }}
+                        title="Baixar imagem"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        ⬇️
+                      </a>
                       <button
                         type="button"
                         className="danger"
@@ -1829,6 +1874,32 @@ function ConfigMode() {
           className="tab-panel"
           hidden={activeTab !== 'voiceovers'}
         >
+          {selectedCompany && currentlyPlayingVoiceover && (
+            <article className="panel" style={{ marginBottom: 'var(--space-4)', backgroundColor: 'var(--bg-subtle)' }}>
+              <header className="section-header">
+                <div>
+                  <h3>🔊 Preview de Locução</h3>
+                  <p>{getAudioDisplayName(currentlyPlayingVoiceover.file_url)}</p>
+                </div>
+                <button 
+                  type="button" 
+                  className="secondary" 
+                  onClick={() => setCurrentlyPlayingVoiceover(null)}
+                  style={{ fontSize: '0.9rem' }}
+                >
+                  Fechar Preview
+                </button>
+              </header>
+              <audio 
+                controls 
+                autoPlay
+                src={currentlyPlayingVoiceover.file_url} 
+                preload="metadata" 
+                style={{ width: '100%', height: '48px', outline: 'none' }}
+              />
+            </article>
+          )}
+
           <MediaSection
             title="Locuções e Avisos"
             description="Áudios secundários intercalados com a trilha sonora. Você pode enviar múltiplos arquivos de uma vez."
@@ -1845,6 +1916,8 @@ function ConfigMode() {
               emptyText="Nenhuma locução enviada."
               onDelete={(asset) => setItemToDelete({ kind: 'voiceovers', asset })}
               busy={busy}
+              onPlay={setCurrentlyPlayingVoiceover}
+              currentlyPlayingId={currentlyPlayingVoiceover?.id}
             />
           </MediaSection>
         </section>
@@ -2071,7 +2144,7 @@ function AssetList({ items, emptyText, busy, onDelete, onPlay, currentlyPlayingI
               </strong>
               <span>Cadastrado em {new Date(asset.created_at).toLocaleDateString('pt-BR')}</span>
             </div>
-            <div className="asset-actions">
+            <div className="asset-actions" style={{ display: 'flex', alignItems: 'center' }}>
               {onPlay && (
                 <button
                   type="button"
@@ -2087,6 +2160,18 @@ function AssetList({ items, emptyText, busy, onDelete, onPlay, currentlyPlayingI
                   🔊 Preview
                 </button>
               )}
+              <a
+                href={`${asset.file_url}?download=`}
+                download
+                target="_blank"
+                rel="noreferrer"
+                className="secondary"
+                style={{ fontSize: '0.8rem', marginRight: 'var(--space-2)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', padding: '0.4rem 0.8rem', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)' }}
+                title={`Baixar ${getAudioDisplayName(asset.file_url)}`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                ⬇️ Baixar
+              </a>
               <button
                 type="button"
                 className="danger"
